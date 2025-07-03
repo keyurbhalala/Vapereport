@@ -230,9 +230,9 @@ def runout_forecaster():
             st.error(f"❌ Error: {str(e)}")
 
 # --- Router ---
-if app_choice == "Vape & Smoking Report":
+if app_choice == "🔁 Vape & Smoking Report":
     description_finder()
-elif app_choice == "E-Liquid Report":
+elif app_choice == "📦 E-Liquid Report":
     inventory_matcher()
 elif app_choice == "🔮 Product Run-Out Forecaster":
     runout_forecaster()
