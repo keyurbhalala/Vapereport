@@ -10,9 +10,8 @@ st.set_page_config(page_title="🧪 Combined Product Tools", layout="wide")
 st.title("🧰 Product Utility Suite")
 
 # --- Sidebar Navigation ---
-app_choice = st.sidebar.radio("Choose Tool", ["🔁 Old ➡ New Description Finder", "📦 Strength-wise Inventory Matcher"])
+app_choice = st.sidebar.radio("Choose Tool", ["Vape Smoking Reprot", "📦 E-liquid Report"])
 
-# --- App 1 ---
 # --- App 1 ---
 def description_finder():
     st.header("🔁 Exact Product Stock Matcher (Ignore Column Names)")
@@ -141,7 +140,7 @@ def inventory_matcher():
         st.download_button("📥 Download Excel", data=output.getvalue(), file_name="matched_inventory.xlsx")
 
 # --- Router ---
-if app_choice == "🔁 Old ➡ New Description Finder":
+if app_choice == "Vape Smoking Reprot":
     description_finder()
-elif app_choice == "📦 Strength-wise Inventory Matcher":
+elif app_choice == "📦 E-liquid Report":
     inventory_matcher()
