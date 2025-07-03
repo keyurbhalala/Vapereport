@@ -14,9 +14,9 @@ app_choice = st.sidebar.radio("Choose Tool", ["Vape Smoking Reprot", "📦 E-liq
 
 # --- App 1 ---
 def description_finder():
-    st.header("🔁 Exact Product Stock Matcher (Ignore Column Names)")
+    st.header("🔁 Exact Product Stock Matcher (Vape Smoking Reprot)")
 
-    file1 = st.file_uploader("Upload File 1 (Full Inventory)", type=["xlsx"], key="file1")
+    file1 = st.file_uploader("Upload File 1 (WMS Full Inventory From stock Report Excle file)", type=["xlsx"], key="file1")
     file2 = st.file_uploader("Upload File 2 (Shortlisted Products)", type=["xlsx"], key="file2")
 
     if file1 and file2:
@@ -65,7 +65,7 @@ def description_finder():
 def inventory_matcher():
     st.header("📦 Product Strength-wise Inventory Matcher")
 
-    file_full = st.file_uploader("Upload Full Inventory File (Excel or CSV)", type=["xlsx", "csv"], key="full")
+    file_full = st.file_uploader("Upload Full Inventory File (Excel or CSV) From Vend", type=["xlsx", "csv"], key="full")
     file_subset = st.file_uploader("Upload Selected Product List (Excel or CSV)", type=["xlsx", "csv"], key="subset")
 
     valid_strengths = ["20mg", "40mg", "50mg"]
