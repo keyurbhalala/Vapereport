@@ -10,7 +10,7 @@ st.set_page_config(page_title="🧪 Combined Product Tools", layout="wide")
 st.title("🧰 Product Utility Suite")
 
 # --- Sidebar Navigation ---
-app_choice = st.sidebar.radio("Choose Tool", ["Vape Smoking Reprot", "📦 E-liquid Report"])
+app_choice = st.sidebar.radio("Choose Tool", ["Vape Smoking Report", "📦 E-liquid Report"])
 
 # --- App 1 ---
 def description_finder():
