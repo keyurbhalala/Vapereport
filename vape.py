@@ -14,7 +14,7 @@ app_choice = st.sidebar.radio("Choose Tool", ["Vape Smoking Report", "📦 E-liq
 
 # --- App 1 ---
 def description_finder():
-    st.header("🔁 Exact Product Stock Matcher (Vape Smoking Reprot)")
+    st.header("Vape Smoking Reprot")
 
     file1 = st.file_uploader("Upload File 1 (WMS Full Inventory From stock Report Excle file)", type=["xlsx"], key="file1")
     file2 = st.file_uploader("Upload File 2 (Shortlisted Products)", type=["xlsx"], key="file2")
