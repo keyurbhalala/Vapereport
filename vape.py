@@ -140,7 +140,7 @@ def inventory_matcher():
         st.download_button("📥 Download Excel", data=output.getvalue(), file_name="matched_inventory.xlsx")
 
 # --- Router ---
-if app_choice == "Vape Smoking Reprot":
+if app_choice == "Vape Smoking Report":
     description_finder()
 elif app_choice == "📦 E-liquid Report":
     inventory_matcher()
