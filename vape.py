@@ -19,7 +19,7 @@ def login():
 
     if submit:
         valid_users = {
-            "admin": "pass123",
+            "admin": "noticalB",
             "keyur": "supersecure"
         }
 
