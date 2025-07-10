@@ -20,8 +20,8 @@ def login():
     if submit:
         valid_users = {
             "admin": "nauticalB",
-            "keyur": "supersecure"
-            "akash": "Shosha@1984"
+            "keyur": "supersecure",
+            "AkashT": "Shosha@1984"
         }
 
         if username in valid_users and password == valid_users[username]:
