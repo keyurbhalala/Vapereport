@@ -21,7 +21,7 @@ def login():
         valid_users = {
             "admin": "nauticalB",
             "keyur": "supersecure"
-            "AkashT": "Shosha@1984"
+            "akash": "Shosha@1984"
         }
 
         if username in valid_users and password == valid_users[username]:
