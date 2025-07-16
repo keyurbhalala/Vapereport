@@ -176,7 +176,7 @@ else:
     # --- Router ---
     def runout_forecaster():
         st.set_page_config(page_title="🔮 Forecast Wizard", layout="wide", page_icon="📦")
-        st.title("📦 Product Run-Out Forecaster(12 Weeks sold)")
+        st.title("📦 Product Run-Out Forecaster(12 Weeks sold Avg)")
         
         # ✅ Google Drive Direct Links
         SALES_FILE_LINK = "https://docs.google.com/spreadsheets/d/1oHWG7i0V08YQPHKARbdXjT_fbEFrmMg51LYtqZbDeag/export?format=csv"
