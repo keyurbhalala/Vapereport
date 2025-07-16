@@ -3,6 +3,8 @@ import pandas as pd
 import re
 import os
 import datetime
+import requests
+import tempfile
 import io
 from io import BytesIO
 from rapidfuzz import process, fuzz
