@@ -48,7 +48,7 @@ else:
 
     # --- App 1 ---
     def description_finder():
-        st.header("Vape Smoking Reprot")
+        st.header("Vape Smoking Report")
     
         file1 = st.file_uploader("Upload File 1 (WMS Full Inventory From stock Report Excle file)", type=["xlsx"], key="file1")
         file2 = st.file_uploader("Upload File 2 (Shortlisted Products)", type=["xlsx"], key="file2")
@@ -176,7 +176,7 @@ else:
     # --- Router ---
     def runout_forecaster():
         st.set_page_config(page_title="🔮 Forecast Wizard", layout="wide", page_icon="📦")
-        st.title("📦 Product Run-Out Forecaster")
+        st.title("📦 Product Run-Out Forecaster(12 Weeks sold)")
         
         # ✅ Google Drive Direct Links
         SALES_FILE_LINK = "https://docs.google.com/spreadsheets/d/1oHWG7i0V08YQPHKARbdXjT_fbEFrmMg51LYtqZbDeag/export?format=csv"
