@@ -44,6 +44,12 @@ else:
         "📦 E-Liquid Report",
         "🔮 Product Run-Out Forecaster"
     ])
+
+    # 🚪 Logout Button
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state["logged_in"] = False
+        st.rerun()
+
     # --- App 1 ---
     def description_finder():
         st.header("Vape Smoking Reprot")
