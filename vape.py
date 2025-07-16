@@ -234,7 +234,7 @@ else:
             # ✅ Auto-detect Supplier column
             supplier_col = None
             for col in df1.columns:
-                if "supplier" in col.lower():
+                if col.strip().lower() == "supplier":
                     supplier_col = col
                     break
             if not supplier_col:
