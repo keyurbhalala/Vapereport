@@ -20,11 +20,7 @@ def login():
         submit = st.form_submit_button("🔓 Login")
 
     if submit:
-        valid_users = {
-            "admin": "nauticalB",
-            "keyur": "nautilusX",
-            "AkashT": "Shosha@1984"
-        }
+        valid_users = st.secrets["users"]
 
         if username in valid_users and password == valid_users[username]:
             st.session_state["logged_in"] = True
