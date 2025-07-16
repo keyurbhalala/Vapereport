@@ -229,7 +229,14 @@ else:
                 st.error("❌ 'Brand' column not found in your sales sheet.")
                 st.stop()
         
-            df1_trimmed[brand_col] = df1[brand_col].astype(str).str.strip()
+            df1_trimmed[brand_col] = (
+                df1[brand_col]
+                .astype(str)
+                .str.encode('ascii', 'ignore')  # Remove weird unicode
+                .str.decode('utf-8')
+                .str.strip()
+                .str.replace(r'\s+', ' ', regex=True)
+            )
 
             # ✅ Auto-detect Supplier column
             supplier_col = None
@@ -241,7 +248,14 @@ else:
                 st.error("❌ 'Supplier' column not found in your sales sheet.")
                 st.stop()
         
-            df1_trimmed[supplier_col] = df1[supplier_col].astype(str).str.strip()
+            df1_trimmed[supplier_col] = (
+                df1[supplier_col]
+                .astype(str)
+                .str.encode('ascii', 'ignore')
+                .str.decode('utf-8')
+                .str.strip()
+                .str.replace(r'\s+', ' ', regex=True)
+            )
 
         
             # ✅ Ensure all date columns are numeric
