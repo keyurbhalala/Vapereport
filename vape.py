@@ -230,6 +230,19 @@ else:
                 st.stop()
         
             df1_trimmed[brand_col] = df1[brand_col].astype(str).str.strip()
+
+            # ✅ Auto-detect Supplier column
+            supplier_col = None
+            for col in df1.columns:
+                if "supplier" in col.lower():
+                    supplier_col = col
+                    break
+            if not supplier_col:
+                st.error("❌ 'Supplier' column not found in your sales sheet.")
+                st.stop()
+        
+            df1_trimmed[supplier_col] = df1[supplier_col].astype(str).str.strip()
+
         
             # ✅ Ensure all date columns are numeric
             for col in date_cols:
@@ -294,6 +307,9 @@ else:
                 suggestions.append(f"{code} [PRODUCT CODE]")
             for brand in merged_df[brand_col].dropna().unique():
                 suggestions.append(f"{brand} [BRAND]")
+            for supplier in merged_df[supplier_col].dropna().unique():
+                suggestions.append(f"{supplier} [SUPPLIER]")
+
         
             selected_items = st.multiselect("🔎 Select Product(s) by Name, Code, or Brand:", sorted(list(set(suggestions))))
         
@@ -309,12 +325,16 @@ else:
                     elif item.endswith("[BRAND]"):
                         value = item.replace("[BRAND]", "").strip()
                         conditions = conditions | (merged_df[brand_col] == value)
+                    elif item.endswith("[SUPPLIER]"):
+                        value = item.replace("[SUPPLIER]", "").strip()
+                        conditions = conditions | (merged_df[supplier_col] == value)
+
         
                 filtered_df = merged_df[conditions]
                 st.success(f"✅ Found {filtered_df.shape[0]} matching product(s):")
                 st.dataframe(
                     filtered_df[[
-                        "Product Name", "Product Code", brand_col,
+                        "Product Name", "Product Code", brand_col, supplier_col,
                         "Closing Inventory", "Avg Weekly Sold",
                         "Weeks Remaining", "Estimated Run-Out Date", "Status"
                     ]],
