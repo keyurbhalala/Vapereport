@@ -22,7 +22,7 @@ def login():
     if submit:
         valid_users = {
             "admin": "nauticalB",
-            "keyur": "supersecure",
+            "keyur": "nautilusX",
             "AkashT": "Shosha@1984"
         }
 
