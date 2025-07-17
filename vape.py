@@ -200,13 +200,21 @@ else:
             # ✅ Read CSV & auto-remove commas
             df1 = pd.read_csv(sales_path, thousands=",")
             df2 = pd.read_csv(inventory_path, thousands=",")
-        
+            # ✅ Clean column names in df1 (strip whitespace, remove line breaks)
+            df1.columns = df1.columns.astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
+
             # Normalize columns
             df1.columns = df1.columns.astype(str)
             df2.columns = df2.columns.astype(str)
         
             # ✅ Always use 1st column as Product Name, 2nd as SKU/Product Code
-            date_cols = [col for col in df1.columns if re.match(r"\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}", str(col))]
+            # ✅ Detect and clean weekly date columns
+            date_cols = [
+                col.strip().replace("\n", "").replace("\r", "")
+                for col in df1.columns
+                if re.match(r"\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}", str(col).strip())
+            ]
+
             if not date_cols:
                 st.error("❌ No valid weekly date columns found in the sales file.")
                 st.stop()
