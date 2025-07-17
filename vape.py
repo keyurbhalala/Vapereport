@@ -176,7 +176,7 @@ else:
     # --- Router ---
     def runout_forecaster():
         st.set_page_config(page_title="🔮 Forecast Wizard", layout="wide", page_icon="📦")
-        st.title("📦 Product Run-Out Forecaster(12 Weeks sold Avg)")
+        st.title("📦 Product Run-Out Forecaster")
         
         # ✅ Google Drive Direct Links
         SALES_FILE_LINK = "https://docs.google.com/spreadsheets/d/1oHWG7i0V08YQPHKARbdXjT_fbEFrmMg51LYtqZbDeag/export?format=csv"
@@ -200,32 +200,13 @@ else:
             # ✅ Read CSV & auto-remove commas
             df1 = pd.read_csv(sales_path, thousands=",")
             df2 = pd.read_csv(inventory_path, thousands=",")
-            # ✅ Clean column names in df1 (strip whitespace, remove line breaks)
-            df1.columns = df1.columns.astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
-
+        
             # Normalize columns
-            df1.columns = (
-                df1.columns.astype(str)
-                .str.replace(r"[\n\r]", " ", regex=True)  # replace \n and \r with space
-                .str.replace(r"\s+", " ", regex=True)     # collapse multiple spaces
-                .str.strip()
-            )
-            df2.columns = (
-                df2.columns.astype(str)
-                .str.replace(r"[\n\r]", " ", regex=True)  # replace \n and \r with space
-                .str.replace(r"\s+", " ", regex=True)     # collapse multiple spaces
-                .str.strip()
-            )
+            df1.columns = df1.columns.astype(str)
+            df2.columns = df2.columns.astype(str)
         
             # ✅ Always use 1st column as Product Name, 2nd as SKU/Product Code
-            # ✅ Detect and clean weekly date columns
-            date_cols = [
-                col for col in df1.columns
-                if re.match(r"\d{1,2}(st|nd|rd|th)? \w+ \d{4}", col)
-            ]
-            # ✅ Fix: strip whitespace from all date_cols
-            date_cols = [col.strip() for col in date_cols]
-            
+            date_cols = [col for col in df1.columns if re.match(r"\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}", str(col))]
             if not date_cols:
                 st.error("❌ No valid weekly date columns found in the sales file.")
                 st.stop()
@@ -248,70 +229,32 @@ else:
                 st.error("❌ 'Brand' column not found in your sales sheet.")
                 st.stop()
         
-            df1_trimmed[brand_col] = (
-                df1[brand_col]
-                .astype(str)
-                .str.encode('ascii', 'ignore')  # Remove weird unicode
-                .str.decode('utf-8')
-                .str.strip()
-                .str.replace(r'\s+', ' ', regex=True)
-            )
-
+            df1_trimmed[brand_col] = df1[brand_col].astype(str).str.strip()
+        
             # ✅ Auto-detect Supplier column
             supplier_col = None
             for col in df1.columns:
-                if col.strip().lower() == "supplier":
+                if "supplier" in col.lower():
                     supplier_col = col
                     break
             if not supplier_col:
                 st.error("❌ 'Supplier' column not found in your sales sheet.")
                 st.stop()
         
-            df1_trimmed[supplier_col] = (
-                df1[supplier_col]
-                .astype(str)
-                .str.encode('ascii', 'ignore')
-                .str.decode('utf-8')
-                .str.strip()
-                .str.replace(r'\s+', ' ', regex=True)
-            )
-
+            df1_trimmed[supplier_col] = df1[supplier_col].astype(str).str.strip()
+        
         
             # ✅ Ensure all date columns are numeric
             for col in date_cols:
                 df1_trimmed[col] = pd.to_numeric(df1_trimmed[col], errors="coerce")
         
             # ✅ Rename first column of inventory file to "Product Name" for merging
-            # ✅ Clean inventory column headers
-            # ✅ Clean headers in both df1 and df2
-            def clean_headers(df):
-                df.columns = (
-                    df.columns.astype(str)
-                    .str.replace(r"[\n\r]", " ", regex=True)
-                    .str.replace(r"\s+", " ", regex=True)
-                    .str.strip()
-                )
-                return df
-            
-            df1 = clean_headers(df1)
-            df2 = clean_headers(df2)
-            
-            # ✅ Rename inventory 1st column to "Product Name"
             df2.rename(columns={df2.columns[0]: "Product Name"}, inplace=True)
-            
-            # ✅ Add missing date columns as 0 to avoid merge crash
-            for col in date_cols:
-                if col not in df2.columns:
-                    df2[col] = 0
-            
-            # ✅ Only select columns that actually exist (safe slice)
-            required_cols = ["Product Name", "Closing Inventory"] + date_cols
-            available_cols = [col for col in required_cols if col in df2.columns]
-            df2_trimmed = df2[available_cols].copy()
-            # ✅ Ensure both sides have clean Product Name before merge
-            df1_trimmed["Product Name"] = df1_trimmed["Product Name"].str.strip()
-            df2_trimmed["Product Name"] = df2_trimmed["Product Name"].str.strip()
-
+            df2_trimmed = df2[["Product Name", "Closing Inventory"]].copy()
+        
+            # Calculate totals & averages
+            df1_trimmed["Total Sold"] = df1_trimmed[date_cols].sum(axis=1)
+            df1_trimmed["Avg Weekly Sold"] = df1_trimmed[date_cols].mean(axis=1)
         
             # Parse last date column header
             last_col_header = date_cols[-1]
@@ -319,25 +262,7 @@ else:
             last_date = datetime.datetime.strptime(cleaned_date, "%d %b %Y")
         
             # Merge with inventory
-            # First, do full outer merge to catch everything
-            merged_df = pd.merge(df1_trimmed, df2_trimmed, on="Product Name", how="outer")
-
-            # Fill missing brand/supplier with blank strings after merge
-            merged_df[brand_col] = merged_df[brand_col].fillna("").astype(str)
-            merged_df[supplier_col] = merged_df[supplier_col].fillna("").astype(str)
-
-            
-            # Fill NA in numerical fields to 0 (to avoid NaN in calc)
-            merged_df["Closing Inventory"] = pd.to_numeric(merged_df["Closing Inventory"], errors="coerce").fillna(0)
-            merged_df[date_cols] = merged_df[date_cols].fillna(0)
-            
-            # Recalculate totals/averages for newly added inventory-only rows
-            merged_df["Total Sold"] = merged_df[date_cols].sum(axis=1)
-            merged_df["Avg Weekly Sold"] = merged_df[date_cols].mean(axis=1)
-
-            # ✅ Filter out rows that are only from inventory and have 0 stock
-            merged_df = merged_df[~((merged_df["Total Sold"] == 0) & (merged_df["Closing Inventory"] == 0))]
-
+            merged_df = pd.merge(df1_trimmed, df2_trimmed, on="Product Name", how="left")
         
             # Forecast calculations
             merged_df["Weeks Remaining"] = merged_df.apply(
@@ -384,7 +309,7 @@ else:
                 suggestions.append(f"{brand} [BRAND]")
             for supplier in merged_df[supplier_col].dropna().unique():
                 suggestions.append(f"{supplier} [SUPPLIER]")
-
+        
         
             selected_items = st.multiselect("🔎 Select Product(s) by Name, Code, or Brand:", sorted(list(set(suggestions))))
         
@@ -398,13 +323,12 @@ else:
                         value = item.replace("[PRODUCT CODE]", "").strip()
                         conditions = conditions | (merged_df["Product Code"] == value)
                     elif item.endswith("[BRAND]"):
-                        value = item.replace("[BRAND]", "").strip().lower()    
-                        conditions = conditions | (merged_df[brand_col].str.lower() == value)
+                        value = item.replace("[BRAND]", "").strip()
+                        conditions = conditions | (merged_df[brand_col] == value)
                     elif item.endswith("[SUPPLIER]"):
-                        value = item.replace("[SUPPLIER]", "").strip().lower()
-                        conditions = conditions | (merged_df[supplier_col].str.lower() == value)
-
-
+                        value = item.replace("[SUPPLIER]", "").strip()
+                        conditions = conditions | (merged_df[supplier_col] == value)
+        
         
                 filtered_df = merged_df[conditions]
                 st.success(f"✅ Found {filtered_df.shape[0]} matching product(s):")
@@ -422,6 +346,7 @@ else:
         
         except Exception as e:
             st.error(f"❌ Error: {e}")
+
     
     # --- Router ---
     if app_choice == "🔁 Vape & Smoking Report":
