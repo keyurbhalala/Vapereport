@@ -210,7 +210,12 @@ else:
                 .str.replace(r"\s+", " ", regex=True)     # collapse multiple spaces
                 .str.strip()
             )
-            df2.columns = df2.columns.astype(str)
+            df2.columns = (
+                df2.columns.astype(str)
+                .str.replace(r"[\n\r]", " ", regex=True)  # replace \n and \r with space
+                .str.replace(r"\s+", " ", regex=True)     # collapse multiple spaces
+                .str.strip()
+            )
         
             # ✅ Always use 1st column as Product Name, 2nd as SKU/Product Code
             # ✅ Detect and clean weekly date columns
@@ -218,7 +223,9 @@ else:
                 col for col in df1.columns
                 if re.match(r"\d{1,2}(st|nd|rd|th)? \w+ \d{4}", col)
             ]
-
+            # ✅ Fix: strip whitespace from all date_cols
+            date_cols = [col.strip() for col in date_cols]
+            
             if not date_cols:
                 st.error("❌ No valid weekly date columns found in the sales file.")
                 st.stop()
