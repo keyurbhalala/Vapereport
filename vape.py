@@ -264,11 +264,12 @@ else:
         
             # ✅ Rename first column of inventory file to "Product Name" for merging
             df2.rename(columns={df2.columns[0]: "Product Name"}, inplace=True)
-            df2_trimmed = df2[["Product Name", "Closing Inventory"]].copy()
-        
-            # Calculate totals & averages
-            df1_trimmed["Total Sold"] = df1_trimmed[date_cols].sum(axis=1)
-            df1_trimmed["Avg Weekly Sold"] = df1_trimmed[date_cols].mean(axis=1)
+            # ✅ Ensure df2 (inventory) has all date columns with 0s so outer merge won't break calculations
+            for col in date_cols:
+                if col not in df2.columns:
+                    df2[col] = 0
+            
+            df2_trimmed = df2[["Product Name", "Closing Inventory"] + date_cols].copy()
         
             # Parse last date column header
             last_col_header = date_cols[-1]
@@ -291,7 +292,7 @@ else:
             # Recalculate totals/averages for newly added inventory-only rows
             merged_df["Total Sold"] = merged_df[date_cols].sum(axis=1)
             merged_df["Avg Weekly Sold"] = merged_df[date_cols].mean(axis=1)
-            
+
             # ✅ Filter out rows that are only from inventory and have 0 stock
             merged_df = merged_df[~((merged_df["Total Sold"] == 0) & (merged_df["Closing Inventory"] == 0))]
 
