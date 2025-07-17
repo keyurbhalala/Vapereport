@@ -276,22 +276,28 @@ else:
         
             # ✅ Rename first column of inventory file to "Product Name" for merging
             # ✅ Clean inventory column headers
-            df2.columns = (
-                df2.columns.astype(str)
-                .str.replace(r"[\n\r]", " ", regex=True)
-                .str.replace(r"\s+", " ", regex=True)
-                .str.strip()
-            )
+            # ✅ Clean headers in both df1 and df2
+            def clean_headers(df):
+                df.columns = (
+                    df.columns.astype(str)
+                    .str.replace(r"[\n\r]", " ", regex=True)
+                    .str.replace(r"\s+", " ", regex=True)
+                    .str.strip()
+                )
+                return df
             
-            # ✅ Rename first column to "Product Name" for merging
+            df1 = clean_headers(df1)
+            df2 = clean_headers(df2)
+            
+            # ✅ Rename inventory 1st column to "Product Name"
             df2.rename(columns={df2.columns[0]: "Product Name"}, inplace=True)
             
-            # ✅ Add missing date columns with 0s to avoid KeyErrors
+            # ✅ Add missing date columns as 0 to avoid merge crash
             for col in date_cols:
                 if col not in df2.columns:
                     df2[col] = 0
             
-            # ✅ Safely extract columns that actually exist
+            # ✅ Only select columns that actually exist (safe slice)
             required_cols = ["Product Name", "Closing Inventory"] + date_cols
             available_cols = [col for col in required_cols if col in df2.columns]
             df2_trimmed = df2[available_cols].copy()
