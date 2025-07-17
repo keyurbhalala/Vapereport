@@ -276,7 +276,20 @@ else:
             last_date = datetime.datetime.strptime(cleaned_date, "%d %b %Y")
         
             # Merge with inventory
-            merged_df = pd.merge(df1_trimmed, df2_trimmed, on="Product Name", how="left")
+            # First, do full outer merge to catch everything
+            merged_df = pd.merge(df1_trimmed, df2_trimmed, on="Product Name", how="outer")
+            
+            # Fill NA in numerical fields to 0 (to avoid NaN in calc)
+            merged_df["Closing Inventory"] = pd.to_numeric(merged_df["Closing Inventory"], errors="coerce").fillna(0)
+            merged_df[date_cols] = merged_df[date_cols].fillna(0)
+            
+            # Recalculate totals/averages for newly added inventory-only rows
+            merged_df["Total Sold"] = merged_df[date_cols].sum(axis=1)
+            merged_df["Avg Weekly Sold"] = merged_df[date_cols].mean(axis=1)
+            
+            # ✅ Filter out rows that are only from inventory and have 0 stock
+            merged_df = merged_df[~((merged_df["Total Sold"] == 0) & (merged_df["Closing Inventory"] == 0))]
+
         
             # Forecast calculations
             merged_df["Weeks Remaining"] = merged_df.apply(
