@@ -234,12 +234,14 @@ else:
             # ✅ Auto-detect Supplier column
             supplier_col = None
             for col in df1.columns:
-                if "supplier" in col.lower():
+                if col.strip().lower() == "supplier":
                     supplier_col = col
                     break
+            
             if not supplier_col:
                 st.error("❌ 'Supplier' column not found in your sales sheet.")
                 st.stop()
+
         
             df1_trimmed[supplier_col] = df1[supplier_col].astype(str).str.strip()
         
