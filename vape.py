@@ -204,15 +204,19 @@ else:
             df1.columns = df1.columns.astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
 
             # Normalize columns
-            df1.columns = df1.columns.astype(str)
+            df1.columns = (
+                df1.columns.astype(str)
+                .str.replace(r"[\n\r]", " ", regex=True)  # replace \n and \r with space
+                .str.replace(r"\s+", " ", regex=True)     # collapse multiple spaces
+                .str.strip()
+            )
             df2.columns = df2.columns.astype(str)
         
             # ✅ Always use 1st column as Product Name, 2nd as SKU/Product Code
             # ✅ Detect and clean weekly date columns
             date_cols = [
-                col.strip().replace("\n", "").replace("\r", "")
-                for col in df1.columns
-                if re.match(r"\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}", str(col).strip())
+                col for col in df1.columns
+                if re.match(r"\d{1,2}(st|nd|rd|th)? \w+ \d{4}", col)
             ]
 
             if not date_cols:
