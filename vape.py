@@ -356,7 +356,7 @@ else:
                         conditions = conditions | (merged_df["Product Code"] == value)
                     elif item.endswith("[BRAND]"):
                         value = item.replace("[BRAND]", "").strip().lower()    
-                        Conditions = conditions | (merged_df[brand_col].str.lower() == value)
+                        conditions = conditions | (merged_df[brand_col].str.lower() == value)
                     elif item.endswith("[SUPPLIER]"):
                         value = item.replace("[SUPPLIER]", "").strip().lower()
                         conditions = conditions | (merged_df[supplier_col].str.lower() == value)
