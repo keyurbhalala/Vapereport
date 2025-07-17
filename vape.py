@@ -275,13 +275,27 @@ else:
                 df1_trimmed[col] = pd.to_numeric(df1_trimmed[col], errors="coerce")
         
             # ✅ Rename first column of inventory file to "Product Name" for merging
+            # ✅ Clean inventory column headers
+            df2.columns = (
+                df2.columns.astype(str)
+                .str.replace(r"[\n\r]", " ", regex=True)
+                .str.replace(r"\s+", " ", regex=True)
+                .str.strip()
+            )
+            
+            # ✅ Rename first column to "Product Name" for merging
             df2.rename(columns={df2.columns[0]: "Product Name"}, inplace=True)
-            # ✅ Ensure df2 (inventory) has all date columns with 0s so outer merge won't break calculations
+            
+            # ✅ Add missing date columns with 0s to avoid KeyErrors
             for col in date_cols:
                 if col not in df2.columns:
                     df2[col] = 0
             
-            df2_trimmed = df2[["Product Name", "Closing Inventory"] + date_cols].copy()
+            # ✅ Safely extract columns that actually exist
+            required_cols = ["Product Name", "Closing Inventory"] + date_cols
+            available_cols = [col for col in required_cols if col in df2.columns]
+            df2_trimmed = df2[available_cols].copy()
+
         
             # Parse last date column header
             last_col_header = date_cols[-1]
