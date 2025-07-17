@@ -308,6 +308,9 @@ else:
             required_cols = ["Product Name", "Closing Inventory"] + date_cols
             available_cols = [col for col in required_cols if col in df2.columns]
             df2_trimmed = df2[available_cols].copy()
+            # ✅ Ensure both sides have clean Product Name before merge
+            df1_trimmed["Product Name"] = df1_trimmed["Product Name"].str.strip()
+            df2_trimmed["Product Name"] = df2_trimmed["Product Name"].str.strip()
 
         
             # Parse last date column header
