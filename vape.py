@@ -278,6 +278,11 @@ else:
             # Merge with inventory
             # First, do full outer merge to catch everything
             merged_df = pd.merge(df1_trimmed, df2_trimmed, on="Product Name", how="outer")
+
+            # Fill missing brand/supplier with blank strings after merge
+            merged_df[brand_col] = merged_df[brand_col].fillna("").astype(str)
+            merged_df[supplier_col] = merged_df[supplier_col].fillna("").astype(str)
+
             
             # Fill NA in numerical fields to 0 (to avoid NaN in calc)
             merged_df["Closing Inventory"] = pd.to_numeric(merged_df["Closing Inventory"], errors="coerce").fillna(0)
