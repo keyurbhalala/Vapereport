@@ -8,9 +8,30 @@ import tempfile
 import io
 from io import BytesIO
 from rapidfuzz import process, fuzz
+import gspread
+from google.oauth2.service_account import Credentials
+from datetime import datetime
 
 st.set_page_config(page_title="🧪 Combined Product Tools", layout="wide")
 # --- Login Block ---
+def log_login_attempt(username, status):
+    # Google Sheets setup
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    credentials = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scope
+    )
+    client = gspread.authorize(credentials)
+    SHEET_NAME = "Activity Log"  # Change if needed
+    sheet = client.open(SHEET_NAME).sheet1
+
+    # Log attempt
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sheet.append_row([timestamp, username, status])
+
 def login():
     st.title("🔐 Login Required")
 
@@ -24,8 +45,10 @@ def login():
 
         if username in valid_users and password == valid_users[username]:
             st.session_state["logged_in"] = True
+            log_login_attempt(username, "Success")
             st.rerun()
         else:
+            log_login_attempt(username, "Failed")
             st.error("❌ Invalid username or password")
 
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
