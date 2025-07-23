@@ -10,7 +10,6 @@ from io import BytesIO
 from rapidfuzz import process, fuzz
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
 
 st.set_page_config(page_title="🧪 Combined Product Tools", layout="wide")
 # --- Login Block ---
@@ -31,7 +30,7 @@ def log_login_attempt(username, status):
 
 
     # Log attempt
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sheet.append_row([timestamp, username, status])
 
 def login():
@@ -198,7 +197,7 @@ else:
                 pivot_df.to_excel(writer, index=False, sheet_name="Pivot_Summary")
             st.download_button("📥 Download Excel", data=output.getvalue(), file_name="matched_inventory.xlsx")
     
-    # --- Router ---
+    # --- app 3 ---
     def runout_forecaster():
         st.set_page_config(page_title="🔮 Forecast Wizard", layout="wide", page_icon="📦")
         st.title("📦 Product Run-Out Forecaster")
