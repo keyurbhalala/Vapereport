@@ -25,8 +25,10 @@ def log_login_attempt(username, status):
         scopes=scope
     )
     client = gspread.authorize(credentials)
-    SHEET_NAME = "Activity Log"  # Change if needed
-    sheet = client.open(SHEET_NAME).sheet1
+    
+    SHEET_ID = "1FT1sWAEDCLGL4sWXNA1ap12a8cvCvtdmVGLuAz4OrS0"
+    sheet = client.open_by_key(SHEET_ID).sheet1
+
 
     # Log attempt
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
