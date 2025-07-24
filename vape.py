@@ -404,7 +404,7 @@ else:
             if dfs:
                 all_data = pd.concat(dfs, ignore_index=True)
                 # Group by product & sku, sum received
-                all_data_grouped = all_data.groupby(['product', 'sku'], as_index=False)['received'].sum()
+                all_data_grouped = all_data.groupby(['product', 'sku'], as_index=False)['quantity'].sum()
                 all_data_grouped = all_data_grouped[all_data_grouped['quantity'] != 0]
                 st.success("Merged Table")
                 st.dataframe(all_data_grouped, use_container_width=True)
