@@ -62,7 +62,7 @@ else:
     app_choice = st.sidebar.radio("Choose Tool", [
         "🔁 Vape & Smoking Report",
         "📦 E-Liquid Report",
-        "🔮 Product Run-Out Forecaster"
+        "🔮 Product Run-Out Forecaster",
         "Product Merge Tool"
     ])
 
