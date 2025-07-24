@@ -462,7 +462,7 @@ else:
             return df
         
         # ------------------- STOCK ROTATION LOGIC -------------------
-        def stock_rotation_logic(df, warehouse_name="Warehouse"):
+        def stock_rotation_logic(df, warehouse_name="Warehouse", to_outlets=None):
             suggestions = []
         
             for sku in df["SKU"].unique():
@@ -470,6 +470,8 @@ else:
                 needs_stock = sku_df[
                     (sku_df["Closing Inventory"] == 0) & (sku_df["Items Sold"] > 0)
                 ]
+                if to_outlets:
+                    needs_stock = needs_stock[needs_stock["Outlet"].isin(to_outlets)]
                 # For warehouse
                 warehouse_row = sku_df[
                     (sku_df["Outlet"] == warehouse_name) & (sku_df["Closing Inventory"] > 0)
@@ -570,7 +572,7 @@ else:
             if filtered.empty:
                 st.warning("No data after filtering. Adjust your filter selections.")
             else:
-                result_df = stock_rotation_logic(filtered, warehouse_name=warehouse_name)
+                result_df = stock_rotation_logic(filtered, warehouse_name=warehouse_name, to_outlets=to_outlets)
                 if result_df.empty:
                     st.info("No stock rotation suggestions found for the current filters and data.")
                 else:
