@@ -393,11 +393,11 @@ else:
                         file.seek(0)
                         df = pd.read_csv(file)
                     # Only keep relevant columns
-                    if all(col in df.columns for col in ['product', 'sku', 'received']):
-                        df = df[['product', 'sku', 'received']]
+                    if all(col in df.columns for col in ['product', 'sku', 'quantity']):
+                        df = df[['product', 'sku', 'quantity']]
                         dfs.append(df)
                     else:
-                        st.warning(f"File {file.name} skipped: missing 'product', 'sku', or 'received' column.")
+                        st.warning(f"File {file.name} skipped: missing 'product', 'sku', or 'quantity' column.")
                 except Exception as e:
                     st.error(f"File {file.name} could not be read. {e}")
         
@@ -405,6 +405,7 @@ else:
                 all_data = pd.concat(dfs, ignore_index=True)
                 # Group by product & sku, sum received
                 all_data_grouped = all_data.groupby(['product', 'sku'], as_index=False)['received'].sum()
+                all_data_grouped = all_data_grouped[all_data_grouped['quantity'] != 0]
                 st.success("Merged Table")
                 st.dataframe(all_data_grouped, use_container_width=True)
         
