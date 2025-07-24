@@ -430,7 +430,7 @@ else:
         
         # Define the warehouse outlet name (change this if needed)
         warehouse_name = "Warehouse"
-        all_outlets = df["Outlet"].dropna().unique().tolist()
+        
 
         # ------------------- DATA LOADING FUNCTION -------------------
         def load_data(file):
@@ -545,6 +545,7 @@ else:
             prod_names = df["SKU Name"].dropna().unique().tolist()
             skus = df["SKU"].dropna().unique().tolist()
             suppliers = df["Supplier"].dropna().unique().tolist()
+            all_outlets = df["Outlet"].dropna().unique().tolist()
         
             with st.sidebar:
                 st.header("Filter Products")
