@@ -419,8 +419,8 @@ else:
                 )
             else:
                 st.error("No valid files found!")
-    else:
-        st.info("Please upload one or more Excel/CSV files.")
+        else:
+            st.info("Please upload one or more Excel/CSV files.")
     
     # --- Router ---
     if app_choice == "🔁 Vape & Smoking Report":
