@@ -457,8 +457,6 @@ else:
                 df = df[df["SKU"].isin(sel_sku)]
             if sel_sup:
                 df = df[df["Supplier"].isin(sel_sup)]
-            if to_outlets:
-                needs_stock = needs_stock[needs_stock["Outlet"].isin(to_outlets)]
             return df
         
         # ------------------- STOCK ROTATION LOGIC -------------------
