@@ -463,27 +463,19 @@ else:
             """
             For each SKU:
               - Find outlets that need stock (sold items > 0, no stock).
-              - Try to fill from warehouse first.
-              - If needed, fill from overstocked, non-selling outlets.
-              - Add closing inventory for from and to outlets.
+              - Try to fill from warehouse first, then overstocked outlets, but do not over-supply.
             Returns a DataFrame of suggested transfers.
             """
             suggestions = []
         
             for sku in df["SKU"].unique():
                 sku_df = df[df["SKU"] == sku].copy()
-        
-                # Find outlets needing stock (sold > 0, no stock)
                 needs_stock = sku_df[
                     (sku_df["Closing Inventory"] == 0) & (sku_df["Items Sold"] > 0)
                 ]
-        
-                # Warehouse row(s) for this SKU (stock > 0)
                 warehouse_row = sku_df[
                     (sku_df["Outlet"] == warehouse_name) & (sku_df["Closing Inventory"] > 0)
                 ]
-        
-                # Other outlets that are overstocked (stock > 0, not selling)
                 overstocked = sku_df[
                     (sku_df["Outlet"] != warehouse_name)
                     & (sku_df["Closing Inventory"] > 0)
@@ -493,8 +485,8 @@ else:
                 for _, need in needs_stock.iterrows():
                     qty_needed = need["Items Sold"]
         
-                    # 1. Try to supply from warehouse first
-                    if not warehouse_row.empty:
+                    # 1. From warehouse first
+                    if not warehouse_row.empty and qty_needed > 0:
                         available = warehouse_row.iloc[0]["Closing Inventory"]
                         qty = min(available, qty_needed)
                         if qty > 0:
@@ -507,11 +499,10 @@ else:
                                 "To Outlet Closing Inv": need["Closing Inventory"],
                                 "Qty to Transfer (suggested)": qty
                             })
-                            # Reduce available stock in the warehouse for this SKU
                             warehouse_row.iloc[0, warehouse_row.columns.get_loc("Closing Inventory")] -= qty
                             qty_needed -= qty
         
-                    # 2. If still need more, get from overstocked outlets
+                    # 2. From overstocked outlets, only until qty_needed is 0
                     for _, over in overstocked.iterrows():
                         if qty_needed <= 0:
                             break
