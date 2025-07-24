@@ -423,14 +423,15 @@ else:
                 st.error("No valid files found!")
         else:
             st.info("Please upload one or more Excel/CSV files.")
-    # --- App 1 ---
+    # --- App 5 ---
     def Stock_Rotation_Advisor():
         st.set_page_config(page_title="Stock Rotation Advisor", layout="wide")
         st.title("🛒 Stock Rotation Advisor (with Filters & Warehouse Priority)")
         
         # Define the warehouse outlet name (change this if needed)
         warehouse_name = "Warehouse"
-        
+        all_outlets = df["Outlet"].dropna().unique().tolist()
+
         # ------------------- DATA LOADING FUNCTION -------------------
         def load_data(file):
             """Load CSV or Excel file, strip column whitespace."""
@@ -456,6 +457,8 @@ else:
                 df = df[df["SKU"].isin(sel_sku)]
             if sel_sup:
                 df = df[df["Supplier"].isin(sel_sup)]
+            if to_outlets:
+                needs_stock = needs_stock[needs_stock["Outlet"].isin(to_outlets)]
             return df
         
         # ------------------- STOCK ROTATION LOGIC -------------------
@@ -551,6 +554,11 @@ else:
                 sel_prod = st.multiselect("Product Name", options=prod_names)
                 sel_sku = st.multiselect("SKU", options=skus)
                 sel_sup = st.multiselect("Supplier", options=suppliers)
+                to_outlets = st.multiselect(
+                    "Limit suggestions to these destination outlets (To Outlet)",
+                    options=all_outlets,
+                    help="Leave empty to allow suggestions for all stores"
+                )
                 st.markdown("Filters are **ANDed** together.")
         
             # --------- 3. FILTERED DATA PREVIEW -----------
