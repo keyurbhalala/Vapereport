@@ -460,12 +460,6 @@ else:
         
         # ------------------- STOCK ROTATION LOGIC -------------------
         def stock_rotation_logic(df, warehouse_name="Warehouse"):
-            """
-            For each SKU:
-              - Find outlets that need stock (sold items > 0, no stock).
-              - Try to fill from warehouse first, then overstocked outlets, but do not over-supply.
-            Returns a DataFrame of suggested transfers.
-            """
             suggestions = []
         
             for sku in df["SKU"].unique():
@@ -473,56 +467,63 @@ else:
                 needs_stock = sku_df[
                     (sku_df["Closing Inventory"] == 0) & (sku_df["Items Sold"] > 0)
                 ]
+                # For warehouse
                 warehouse_row = sku_df[
                     (sku_df["Outlet"] == warehouse_name) & (sku_df["Closing Inventory"] > 0)
                 ]
+                warehouse_remaining = (
+                    warehouse_row.iloc[0]["Closing Inventory"] if not warehouse_row.empty else 0
+                )
+                # For overstocked outlets: prepare mutable dict
                 overstocked = sku_df[
                     (sku_df["Outlet"] != warehouse_name)
                     & (sku_df["Closing Inventory"] > 0)
                     & (sku_df["Items Sold"] == 0)
                 ]
+                overstocked_remaining = {
+                    over["Outlet"]: over["Closing Inventory"] for _, over in overstocked.iterrows()
+                }
         
                 for _, need in needs_stock.iterrows():
                     qty_needed = need["Items Sold"]
         
-                    # 1. From warehouse first
-                    if not warehouse_row.empty and qty_needed > 0:
-                        available = warehouse_row.iloc[0]["Closing Inventory"]
-                        qty = min(available, qty_needed)
-                        if qty > 0:
-                            suggestions.append({
-                                "SKU": sku,
-                                "Product": need["SKU Name"],
-                                "From Outlet": warehouse_name,
-                                "From Outlet Closing Inv": warehouse_row.iloc[0]["Closing Inventory"],
-                                "To Outlet": need["Outlet"],
-                                "To Outlet Closing Inv": need["Closing Inventory"],
-                                "Qty to Transfer (suggested)": qty
-                            })
-                            warehouse_row.iloc[0, warehouse_row.columns.get_loc("Closing Inventory")] -= qty
-                            qty_needed -= qty
+                    # 1. Try warehouse
+                    if warehouse_remaining > 0 and qty_needed > 0:
+                        qty = min(warehouse_remaining, qty_needed)
+                        suggestions.append({
+                            "SKU": sku,
+                            "Product": need["SKU Name"],
+                            "From Outlet": warehouse_name,
+                            "From Outlet Closing Inv": warehouse_remaining,
+                            "To Outlet": need["Outlet"],
+                            "To Outlet Closing Inv": need["Closing Inventory"],
+                            "Qty to Transfer (suggested)": qty
+                        })
+                        warehouse_remaining -= qty
+                        qty_needed -= qty
         
-                    # 2. From overstocked outlets, only until qty_needed is 0
-                    for _, over in overstocked.iterrows():
+                    # 2. From overstocked outlets
+                    for outlet_name in overstocked_remaining:
+                        available = overstocked_remaining[outlet_name]
+                        if qty_needed <= 0 or available <= 0:
+                            continue
+                        qty = min(available, qty_needed)
+                        suggestions.append({
+                            "SKU": sku,
+                            "Product": need["SKU Name"],
+                            "From Outlet": outlet_name,
+                            "From Outlet Closing Inv": available,
+                            "To Outlet": need["Outlet"],
+                            "To Outlet Closing Inv": need["Closing Inventory"],
+                            "Qty to Transfer (suggested)": qty
+                        })
+                        overstocked_remaining[outlet_name] -= qty
+                        qty_needed -= qty
                         if qty_needed <= 0:
-                            break
-                        avail = over["Closing Inventory"]
-                        qty = min(avail, qty_needed)
-                        if qty > 0:
-                            suggestions.append({
-                                "SKU": sku,
-                                "Product": need["SKU Name"],
-                                "From Outlet": over["Outlet"],
-                                "From Outlet Closing Inv": over["Closing Inventory"],
-                                "To Outlet": need["Outlet"],
-                                "To Outlet Closing Inv": need["Closing Inventory"],
-                                "Qty to Transfer (suggested)": qty
-                            })
-                            qty_needed -= qty
+                            break  # Stop when need is satisfied
         
             return pd.DataFrame(suggestions)
-        
-        
+      
         # =============================================================
         # ========================== UI SECTION =======================
         # =============================================================
