@@ -63,6 +63,7 @@ else:
         "🔁 Vape & Smoking Report",
         "📦 E-Liquid Report",
         "🔮 Product Run-Out Forecaster"
+        "Product Merge Tool"
     ])
 
     # 🚪 Logout Button
@@ -372,7 +373,54 @@ else:
         
         except Exception as e:
             st.error(f"❌ Error: {e}")
-
+    # --- App 4 ---
+    def Product_Merge_Tool():
+        st.set_page_config(page_title="Product Merge Tool", page_icon="📦", layout="centered")
+        st.title("📦 Merge Received Quantities from Multiple Files")
+        
+        uploaded_files = st.file_uploader(
+            "Upload your files (Excel/CSV)", type=["csv", "xlsx"], accept_multiple_files=True
+        )
+        
+        if uploaded_files:
+            dfs = []
+            for file in uploaded_files:
+                try:
+                    # Try Excel, then CSV
+                    try:
+                        df = pd.read_excel(file)
+                    except Exception:
+                        file.seek(0)
+                        df = pd.read_csv(file)
+                    # Only keep relevant columns
+                    if all(col in df.columns for col in ['product', 'sku', 'received']):
+                        df = df[['product', 'sku', 'received']]
+                        dfs.append(df)
+                    else:
+                        st.warning(f"File {file.name} skipped: missing 'product', 'sku', or 'received' column.")
+                except Exception as e:
+                    st.error(f"File {file.name} could not be read. {e}")
+        
+            if dfs:
+                all_data = pd.concat(dfs, ignore_index=True)
+                # Group by product & sku, sum received
+                all_data_grouped = all_data.groupby(['product', 'sku'], as_index=False)['received'].sum()
+                st.success("Merged Table")
+                st.dataframe(all_data_grouped, use_container_width=True)
+        
+                # Download merged data as Excel
+                output = io.BytesIO()
+                all_data_grouped.to_excel(output, index=False)
+                st.download_button(
+                    "Download Merged File (Excel)",
+                    output.getvalue(),
+                    file_name="merged_products_with_sku.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.error("No valid files found!")
+    else:
+        st.info("Please upload one or more Excel/CSV files.")
     
     # --- Router ---
     if app_choice == "🔁 Vape & Smoking Report":
@@ -381,4 +429,6 @@ else:
         inventory_matcher()
     elif app_choice == "🔮 Product Run-Out Forecaster":
         runout_forecaster()
+    elif app_choice == "Product Merge Tool":
+        Product_Merge_Tool()
 
