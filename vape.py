@@ -63,7 +63,8 @@ else:
         "🔁 Vape & Smoking Report",
         "📦 E-Liquid Report",
         "🔮 Product Run-Out Forecaster",
-        "Product Merge Tool"
+        "Product Merge Tool",
+        "Stock Rotation Advisor"
     ])
 
     # 🚪 Logout Button
@@ -422,7 +423,172 @@ else:
                 st.error("No valid files found!")
         else:
             st.info("Please upload one or more Excel/CSV files.")
-    
+    # --- App 1 ---
+    def Stock_Rotation_Advisor():
+        st.set_page_config(page_title="Stock Rotation Advisor", layout="wide")
+        st.title("🛒 Stock Rotation Advisor (with Filters & Warehouse Priority)")
+        
+        # Define the warehouse outlet name (change this if needed)
+        warehouse_name = "Warehouse"
+        
+        # ------------------- DATA LOADING FUNCTION -------------------
+        def load_data(file):
+            """Load CSV or Excel file, strip column whitespace."""
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file)
+            df.columns = [c.strip() for c in df.columns]
+            return df
+        
+        # ------------------- FILTER APPLICATION FUNCTION -------------------
+        def apply_filters(df, sel_tags, sel_brands, sel_cats, sel_prod, sel_sku, sel_sup):
+            """Apply all multi-select filters to the DataFrame."""
+            if sel_tags:
+                df = df[df["Tag"].isin(sel_tags)]
+            if sel_brands:
+                df = df[df["Brand"].isin(sel_brands)]
+            if sel_cats:
+                df = df[df["Category"].isin(sel_cats)]
+            if sel_prod:
+                df = df[df["SKU Name"].isin(sel_prod)]
+            if sel_sku:
+                df = df[df["SKU"].isin(sel_sku)]
+            if sel_sup:
+                df = df[df["Supplier"].isin(sel_sup)]
+            return df
+        
+        # ------------------- STOCK ROTATION LOGIC -------------------
+        def stock_rotation_logic(df, warehouse_name="Warehouse"):
+            """
+            For each SKU:
+              - Find outlets that need stock (sold items > 0, no stock).
+              - Try to fill from warehouse first.
+              - If needed, fill from overstocked, non-selling outlets.
+              - Add closing inventory for from and to outlets.
+            Returns a DataFrame of suggested transfers.
+            """
+            suggestions = []
+        
+            for sku in df["SKU"].unique():
+                sku_df = df[df["SKU"] == sku].copy()
+        
+                # Find outlets needing stock (sold > 0, no stock)
+                needs_stock = sku_df[
+                    (sku_df["Closing Inventory"] == 0) & (sku_df["Items Sold"] > 0)
+                ]
+        
+                # Warehouse row(s) for this SKU (stock > 0)
+                warehouse_row = sku_df[
+                    (sku_df["Outlet"] == warehouse_name) & (sku_df["Closing Inventory"] > 0)
+                ]
+        
+                # Other outlets that are overstocked (stock > 0, not selling)
+                overstocked = sku_df[
+                    (sku_df["Outlet"] != warehouse_name)
+                    & (sku_df["Closing Inventory"] > 0)
+                    & (sku_df["Items Sold"] == 0)
+                ]
+        
+                for _, need in needs_stock.iterrows():
+                    qty_needed = need["Items Sold"]
+        
+                    # 1. Try to supply from warehouse first
+                    if not warehouse_row.empty:
+                        available = warehouse_row.iloc[0]["Closing Inventory"]
+                        qty = min(available, qty_needed)
+                        if qty > 0:
+                            suggestions.append({
+                                "SKU": sku,
+                                "Product": need["SKU Name"],
+                                "From Outlet": warehouse_name,
+                                "From Outlet Closing Inv": warehouse_row.iloc[0]["Closing Inventory"],
+                                "To Outlet": need["Outlet"],
+                                "To Outlet Closing Inv": need["Closing Inventory"],
+                                "Qty to Transfer (suggested)": qty
+                            })
+                            # Reduce available stock in the warehouse for this SKU
+                            warehouse_row.iloc[0, warehouse_row.columns.get_loc("Closing Inventory")] -= qty
+                            qty_needed -= qty
+        
+                    # 2. If still need more, get from overstocked outlets
+                    for _, over in overstocked.iterrows():
+                        if qty_needed <= 0:
+                            break
+                        avail = over["Closing Inventory"]
+                        qty = min(avail, qty_needed)
+                        if qty > 0:
+                            suggestions.append({
+                                "SKU": sku,
+                                "Product": need["SKU Name"],
+                                "From Outlet": over["Outlet"],
+                                "From Outlet Closing Inv": over["Closing Inventory"],
+                                "To Outlet": need["Outlet"],
+                                "To Outlet Closing Inv": need["Closing Inventory"],
+                                "Qty to Transfer (suggested)": qty
+                            })
+                            qty_needed -= qty
+        
+            return pd.DataFrame(suggestions)
+        
+        
+        # =============================================================
+        # ========================== UI SECTION =======================
+        # =============================================================
+        
+        # --------- 1. FILE UPLOAD -----------
+        file = st.file_uploader("Upload inventory CSV or Excel file", type=["csv", "xlsx"])
+        
+        if file:
+            df = load_data(file)
+            st.write("Raw Data", df)
+        
+            # --------- 2. FILTERS IN SIDEBAR -----------
+            tags = df["Tag"].dropna().unique().tolist()
+            brands = df["Brand"].dropna().unique().tolist()
+            cats = df["Category"].dropna().unique().tolist()
+            prod_names = df["SKU Name"].dropna().unique().tolist()
+            skus = df["SKU"].dropna().unique().tolist()
+            suppliers = df["Supplier"].dropna().unique().tolist()
+        
+            with st.sidebar:
+                st.header("Filter Products")
+                sel_tags = st.multiselect("Tag", options=tags)
+                sel_brands = st.multiselect("Brand", options=brands)
+                sel_cats = st.multiselect("Category", options=cats)
+                sel_prod = st.multiselect("Product Name", options=prod_names)
+                sel_sku = st.multiselect("SKU", options=skus)
+                sel_sup = st.multiselect("Supplier", options=suppliers)
+                st.markdown("Filters are **ANDed** together.")
+        
+            # --------- 3. FILTERED DATA PREVIEW -----------
+            filtered = apply_filters(df, sel_tags, sel_brands, sel_cats, sel_prod, sel_sku, sel_sup)
+            st.write("Filtered Data", filtered)
+        
+            # --------- 4. MAIN LOGIC AND OUTPUT -----------
+            if filtered.empty:
+                st.warning("No data after filtering. Adjust your filter selections.")
+            else:
+                result_df = stock_rotation_logic(filtered, warehouse_name=warehouse_name)
+                if result_df.empty:
+                    st.info("No stock rotation suggestions found for the current filters and data.")
+                else:
+                    st.success(f"Found {len(result_df)} stock rotation suggestions.")
+                    st.dataframe(result_df, use_container_width=True)
+                    csv = result_df.to_csv(index=False)
+                    st.download_button(
+                        "Download Rotation Suggestions as CSV",
+                        csv,
+                        file_name="stock_rotation_suggestions.csv",
+                        mime="text/csv"
+                    )
+        
+            # --------- 5. OPTIONAL: SKU MAPPING CHECK -----------
+            with st.expander("🔍 Show unique SKU / SKU Name mapping (for verification)"):
+                st.dataframe(df[["SKU", "SKU Name"]].drop_duplicates())
+        
+        else:
+            st.info("Upload your inventory CSV or Excel file to start.")
     # --- Router ---
     if app_choice == "🔁 Vape & Smoking Report":
         description_finder()
@@ -432,4 +598,6 @@ else:
         runout_forecaster()
     elif app_choice == "Product Merge Tool":
         Product_Merge_Tool()
+    elif app_choice == "Stock Rotation Advisor":
+        Stock_Rotation_Advisor()
 
