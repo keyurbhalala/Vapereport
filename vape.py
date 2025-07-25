@@ -559,7 +559,7 @@ else:
         #store_to_group_file = st.sidebar.file_uploader("Store to Group Mapping (Excel)", type=["xlsx"])
         #group_to_island_file = st.sidebar.file_uploader("Group to Island Mapping (Excel)", type=["xlsx"])
         
-        if file and store_to_group_file and group_to_island_file:
+        if file:
             # --- Load all files ---
             if file.name.endswith('.csv'):
                 df = pd.read_csv(file)
@@ -567,8 +567,10 @@ else:
                 df = pd.read_excel(file)
             df.columns = [c.strip() for c in df.columns]
         
-            store_to_group_df = load_excel(store_to_group_file)
-            group_to_island_df = load_excel(group_to_island_file)
+            #store_to_group_df = load_excel(store_to_group_file)
+            #group_to_island_df = load_excel(group_to_island_file)
+            store_to_group_df = load_excel_from_github(store_to_group_url)
+            group_to_island_df = load_excel_from_github(group_to_island_url)
         
             outlet_to_group, group_to_island, outlet_to_group_and_island = build_outlet_to_group_and_island(
                 store_to_group_df, group_to_island_df)
