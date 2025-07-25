@@ -435,12 +435,9 @@ else:
             response.raise_for_status()
             return pd.read_excel(BytesIO(response.content))
         # --- Always load mapping files from GitHub ---
-        store_to_group_url = "https://github.com/keyurbhalala/Vapereport/blob/main/store_to_group.xlsx"
-        group_to_island_url = "https://github.com/keyurbhalala/Vapereport/blob/main/group_to_island.xlsx"
+        store_to_group_url = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/store_to_group.xlsx"
+        group_to_island_url = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/group_to_island.xlsx"
         
-        @st.cache_data
-        def load_excel_from_url(url):
-            return pd.read_excel(url)
         
         store_to_group_df = load_excel_from_url(store_to_group_url)
         group_to_island_df = load_excel_from_url(group_to_island_url)
