@@ -432,8 +432,8 @@ else:
         # ------------------- DATA LOADING HELPERS -------------------
         
         # --- Always load mapping files from GitHub ---
-        store_to_group_url = "https://raw.githubusercontent.com/<username>/<repo>/<branch>/store_to_group.xlsx"
-        group_to_island_url = "https://raw.githubusercontent.com/<username>/<repo>/<branch>/group_to_island.xlsx"
+        store_to_group_url = "https://github.com/keyurbhalala/Vapereport/blob/main/store_to_group.xlsx"
+        group_to_island_url = "https://github.com/keyurbhalala/Vapereport/blob/main/group_to_island.xlsx"
         
         @st.cache_data
         def load_excel_from_url(url):
