@@ -438,7 +438,9 @@ else:
         store_to_group_url = "https://github.com/keyurbhalala/Vapereport/blob/main/store_to_group.xlsx"
         group_to_island_url = "https://github.com/keyurbhalala/Vapereport/blob/main/group_to_island.xlsx"
         
-        
+        @st.cache_data
+        def load_excel_from_url(url):
+            return pd.read_excel(url)
         
         store_to_group_df = load_excel_from_url(store_to_group_url)
         group_to_island_df = load_excel_from_url(group_to_island_url)
