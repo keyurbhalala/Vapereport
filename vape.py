@@ -425,42 +425,48 @@ else:
             st.info("Please upload one or more Excel/CSV files.")
     # --- App 5 ---
     def Stock_Rotation_Advisor():
+        # ------------------- PAGE CONFIG -------------------
         st.set_page_config(page_title="Stock Rotation Advisor", layout="wide")
-        st.title("🛒 Stock Rotation Advisor (with Filters & Warehouse Priority)")
+        st.title("🛒 Stock Rotation Advisor (Island & Group Prioritization)")
         
-        # Define the warehouse outlet name (change this if needed)
-        warehouse_name = "Warehouse"
+        # ------------------- DATA LOADING HELPERS -------------------
         
-
-        # ------------------- DATA LOADING FUNCTION -------------------
-        def load_data(file):
-            """Load CSV or Excel file, strip column whitespace."""
-            if file.name.endswith('.csv'):
-                df = pd.read_csv(file)
-            else:
-                df = pd.read_excel(file)
-            df.columns = [c.strip() for c in df.columns]
-            return df
+        @st.cache_data
+        def load_excel(file):
+            return pd.read_excel(file)
         
-        # ------------------- FILTER APPLICATION FUNCTION -------------------
-        def apply_filters(df, sel_tags, sel_brands, sel_cats, sel_prod, sel_sku, sel_sup):
-            """Apply all multi-select filters to the DataFrame."""
-            if sel_tags:
-                df = df[df["Tag"].isin(sel_tags)]
-            if sel_brands:
-                df = df[df["Brand"].isin(sel_brands)]
-            if sel_cats:
-                df = df[df["Category"].isin(sel_cats)]
-            if sel_prod:
-                df = df[df["SKU Name"].isin(sel_prod)]
-            if sel_sku:
-                df = df[df["SKU"].isin(sel_sku)]
-            if sel_sup:
-                df = df[df["Supplier"].isin(sel_sup)]
-            return df
+        def build_outlet_to_group_and_island(store_to_group_df, group_to_island_df):
+            outlet_to_group = dict(zip(store_to_group_df['Store Name'], store_to_group_df['Group Name']))
+            group_to_island = dict(zip(group_to_island_df['Group Name'], group_to_island_df['Island']))
+            outlet_to_group_and_island = {
+                outlet: {
+                    'group': outlet_to_group.get(outlet, ''),
+                    'island': group_to_island.get(outlet_to_group.get(outlet, ''), '')
+                }
+                for outlet in outlet_to_group
+            }
+            return outlet_to_group, group_to_island, outlet_to_group_and_island
         
-        # ------------------- STOCK ROTATION LOGIC -------------------
-        def stock_rotation_logic(df, warehouse_name="Warehouse", to_outlets=None):
+        def prioritize_sources(need_outlet, source_outlets, outlet_lookup):
+            """Return sources sorted: same island+group > same island+other group > other island"""
+            need_info = outlet_lookup.get(need_outlet, {})
+            need_group = need_info.get('group', '')
+            need_island = need_info.get('island', '')
+            tier1, tier2, tier3 = [], [], []
+            for src in source_outlets:
+                src_info = outlet_lookup.get(src, {})
+                if src_info.get('island') == need_island:
+                    if src_info.get('group') == need_group:
+                        tier1.append(src)
+                    else:
+                        tier2.append(src)
+                else:
+                    tier3.append(src)
+            return tier1 + tier2 + tier3
+        
+        # ------------------- MAIN LOGIC -------------------
+        
+        def stock_rotation_logic(df, warehouse_name="Warehouse", to_outlets=None, outlet_lookup=None):
             suggestions = []
         
             for sku in df["SKU"].unique():
@@ -470,14 +476,16 @@ else:
                 ]
                 if to_outlets:
                     needs_stock = needs_stock[needs_stock["Outlet"].isin(to_outlets)]
-                # For warehouse
+        
+                # Warehouse handling
                 warehouse_row = sku_df[
                     (sku_df["Outlet"] == warehouse_name) & (sku_df["Closing Inventory"] > 0)
                 ]
                 warehouse_remaining = (
                     warehouse_row.iloc[0]["Closing Inventory"] if not warehouse_row.empty else 0
                 )
-                # For overstocked outlets: prepare mutable dict
+        
+                # Overstocked sources
                 overstocked = sku_df[
                     (sku_df["Outlet"] != warehouse_name)
                     & (sku_df["Closing Inventory"] > 0)
@@ -505,8 +513,14 @@ else:
                         warehouse_remaining -= qty
                         qty_needed -= qty
         
-                    # 2. From overstocked outlets
-                    for outlet_name in overstocked_remaining:
+                    # 2. Prioritized overstocked sources
+                    source_outlets = list(overstocked_remaining.keys())
+                    if outlet_lookup:
+                        prioritized_sources = prioritize_sources(need["Outlet"], source_outlets, outlet_lookup)
+                    else:
+                        prioritized_sources = source_outlets
+        
+                    for outlet_name in prioritized_sources:
                         available = overstocked_remaining[outlet_name]
                         if qty_needed <= 0 or available <= 0:
                             continue
@@ -526,19 +540,35 @@ else:
                             break  # Stop when need is satisfied
         
             return pd.DataFrame(suggestions)
-      
+        
         # =============================================================
         # ========================== UI SECTION =======================
         # =============================================================
         
-        # --------- 1. FILE UPLOAD -----------
+        # --------- 1. MAIN INVENTORY UPLOAD -----------
         file = st.file_uploader("Upload inventory CSV or Excel file", type=["csv", "xlsx"])
+        # --------- 2. MAPPING FILES UPLOAD -----------
+        st.sidebar.header("Upload Mapping Files")
+        store_to_group_file = st.sidebar.file_uploader("Store to Group Mapping (Excel)", type=["xlsx"])
+        group_to_island_file = st.sidebar.file_uploader("Group to Island Mapping (Excel)", type=["xlsx"])
         
-        if file:
-            df = load_data(file)
+        if file and store_to_group_file and group_to_island_file:
+            # --- Load all files ---
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file)
+            df.columns = [c.strip() for c in df.columns]
+        
+            store_to_group_df = load_excel(store_to_group_file)
+            group_to_island_df = load_excel(group_to_island_file)
+        
+            outlet_to_group, group_to_island, outlet_to_group_and_island = build_outlet_to_group_and_island(
+                store_to_group_df, group_to_island_df)
+        
             st.write("Raw Data", df)
         
-            # --------- 2. FILTERS IN SIDEBAR -----------
+            # FILTERS
             tags = df["Tag"].dropna().unique().tolist()
             brands = df["Brand"].dropna().unique().tolist()
             cats = df["Category"].dropna().unique().tolist()
@@ -555,22 +585,41 @@ else:
                 sel_prod = st.multiselect("Product Name", options=prod_names)
                 sel_sku = st.multiselect("SKU", options=skus)
                 sel_sup = st.multiselect("Supplier", options=suppliers)
-                to_outlets = st.multiselect(
+                sel_to_outlets = st.multiselect(
                     "Limit suggestions to these destination outlets (To Outlet)",
                     options=all_outlets,
                     help="Leave empty to allow suggestions for all stores"
                 )
                 st.markdown("Filters are **ANDed** together.")
         
-            # --------- 3. FILTERED DATA PREVIEW -----------
+            # Apply filters
+            def apply_filters(df, sel_tags, sel_brands, sel_cats, sel_prod, sel_sku, sel_sup):
+                if sel_tags:
+                    df = df[df["Tag"].isin(sel_tags)]
+                if sel_brands:
+                    df = df[df["Brand"].isin(sel_brands)]
+                if sel_cats:
+                    df = df[df["Category"].isin(sel_cats)]
+                if sel_prod:
+                    df = df[df["SKU Name"].isin(sel_prod)]
+                if sel_sku:
+                    df = df[df["SKU"].isin(sel_sku)]
+                if sel_sup:
+                    df = df[df["Supplier"].isin(sel_sup)]
+                return df
+        
             filtered = apply_filters(df, sel_tags, sel_brands, sel_cats, sel_prod, sel_sku, sel_sup)
             st.write("Filtered Data", filtered)
         
-            # --------- 4. MAIN LOGIC AND OUTPUT -----------
             if filtered.empty:
                 st.warning("No data after filtering. Adjust your filter selections.")
             else:
-                result_df = stock_rotation_logic(filtered, warehouse_name=warehouse_name, to_outlets=to_outlets)
+                result_df = stock_rotation_logic(
+                    filtered,
+                    warehouse_name="Warehouse",
+                    to_outlets=sel_to_outlets,
+                    outlet_lookup=outlet_to_group_and_island
+                )
                 if result_df.empty:
                     st.info("No stock rotation suggestions found for the current filters and data.")
                 else:
@@ -584,12 +633,18 @@ else:
                         mime="text/csv"
                     )
         
-            # --------- 5. OPTIONAL: SKU MAPPING CHECK -----------
+            # Optional: Show mapping for verification
             with st.expander("🔍 Show unique SKU / SKU Name mapping (for verification)"):
                 st.dataframe(df[["SKU", "SKU Name"]].drop_duplicates())
         
+            with st.expander("🏷️ Store to Group/Island Mapping"):
+                st.write(pd.DataFrame([
+                    {"Store": o, "Group": outlet_to_group_and_island[o]['group'], "Island": outlet_to_group_and_island[o]['island']}
+                    for o in outlet_to_group_and_island
+                ]))
+        
         else:
-            st.info("Upload your inventory CSV or Excel file to start.")
+            st.info("Upload your inventory file **AND** both mapping Excel files to start.")
     # --- Router ---
     if app_choice == "🔁 Vape & Smoking Report":
         description_finder()
