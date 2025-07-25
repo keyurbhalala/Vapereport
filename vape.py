@@ -555,9 +555,9 @@ else:
         # --------- 1. MAIN INVENTORY UPLOAD -----------
         file = st.file_uploader("Upload inventory CSV or Excel file", type=["csv", "xlsx"])
         # --------- 2. MAPPING FILES UPLOAD -----------
-        st.sidebar.header("Upload Mapping Files")
-        store_to_group_file = st.sidebar.file_uploader("Store to Group Mapping (Excel)", type=["xlsx"])
-        group_to_island_file = st.sidebar.file_uploader("Group to Island Mapping (Excel)", type=["xlsx"])
+        #st.sidebar.header("Upload Mapping Files")
+        #store_to_group_file = st.sidebar.file_uploader("Store to Group Mapping (Excel)", type=["xlsx"])
+        #group_to_island_file = st.sidebar.file_uploader("Group to Island Mapping (Excel)", type=["xlsx"])
         
         if file and store_to_group_file and group_to_island_file:
             # --- Load all files ---
