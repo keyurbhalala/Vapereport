@@ -439,8 +439,8 @@ else:
         group_to_island_url = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/group_to_island.xlsx"
         
         
-        store_to_group_df = load_excel_from_url(store_to_group_url)
-        group_to_island_df = load_excel_from_url(group_to_island_url)
+        store_to_group_df = load_excel_from_github(store_to_group_url)
+        group_to_island_df = load_excel_from_github(group_to_island_url)
         
         def build_outlet_to_group_and_island(store_to_group_df, group_to_island_df):
             outlet_to_group = dict(zip(store_to_group_df['Store Name'], store_to_group_df['Group Name']))
