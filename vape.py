@@ -394,19 +394,19 @@ else:
                         file.seek(0)
                         df = pd.read_csv(file)
                     # Only keep relevant columns
-                    if all(col in df.columns for col in ['product', 'sku', 'quantity']):
-                        df = df[['product', 'sku', 'quantity']]
+                    if all(col in df.columns for col in ['product', 'sku', 'received']):
+                        df = df[['product', 'sku', 'received']]
                         dfs.append(df)
                     else:
-                        st.warning(f"File {file.name} skipped: missing 'product', 'sku', or 'quantity' column.")
+                        st.warning(f"File {file.name} skipped: missing 'product', 'sku', or 'received' column.")
                 except Exception as e:
                     st.error(f"File {file.name} could not be read. {e}")
         
             if dfs:
                 all_data = pd.concat(dfs, ignore_index=True)
                 # Group by product & sku, sum received
-                all_data_grouped = all_data.groupby(['product', 'sku'], as_index=False)['quantity'].sum()
-                all_data_grouped = all_data_grouped[all_data_grouped['quantity'] != 0]
+                all_data_grouped = all_data.groupby(['product', 'sku'], as_index=False)['received'].sum()
+                all_data_grouped = all_data_grouped[all_data_grouped['received'] != 0]
                 st.success("Merged Table")
                 st.dataframe(all_data_grouped, use_container_width=True)
         
@@ -473,18 +473,25 @@ else:
         
         # ------------------- MAIN LOGIC -------------------
         
-        def stock_rotation_logic(df, warehouse_name="Warehouse", to_outlets=None, outlet_lookup=None):
+        def stock_rotation_logic(
+            df,
+            warehouse_name="Warehouse",
+            to_outlets=None,
+            outlet_lookup=None
+        ):
             suggestions = []
         
             for sku in df["SKU"].unique():
                 sku_df = df[df["SKU"] == sku].copy()
+                # 1. Outlets needing stock, ranked by most needed
                 needs_stock = sku_df[
                     (sku_df["Closing Inventory"] == 0) & (sku_df["Items Sold"] > 0)
                 ]
                 if to_outlets:
                     needs_stock = needs_stock[needs_stock["Outlet"].isin(to_outlets)]
+                needs_stock = needs_stock.sort_values(by="Items Sold", ascending=False)  # fill highest demand first
         
-                # Warehouse handling
+                # 2. Warehouse available
                 warehouse_row = sku_df[
                     (sku_df["Outlet"] == warehouse_name) & (sku_df["Closing Inventory"] > 0)
                 ]
@@ -492,7 +499,7 @@ else:
                     warehouse_row.iloc[0]["Closing Inventory"] if not warehouse_row.empty else 0
                 )
         
-                # Overstocked sources
+                # 3. Overstocked (not needed at all = not selling, has stock) - use as sources first
                 overstocked = sku_df[
                     (sku_df["Outlet"] != warehouse_name)
                     & (sku_df["Closing Inventory"] > 0)
@@ -502,10 +509,20 @@ else:
                     over["Outlet"]: over["Closing Inventory"] for _, over in overstocked.iterrows()
                 }
         
+                # 4. Regular overstocked (selling, but has surplus) - classic rotation logic if you wish
+                regular_overstocked = sku_df[
+                    (sku_df["Outlet"] != warehouse_name)
+                    & (sku_df["Closing Inventory"] > 0)
+                    & (sku_df["Items Sold"] > 0)
+                ]
+                regular_overstocked_remaining = {
+                    over["Outlet"]: over["Closing Inventory"] for _, over in regular_overstocked.iterrows()
+                }
+        
                 for _, need in needs_stock.iterrows():
                     qty_needed = need["Items Sold"]
         
-                    # 1. Try warehouse
+                    # A. Warehouse first
                     if warehouse_remaining > 0 and qty_needed > 0:
                         qty = min(warehouse_remaining, qty_needed)
                         suggestions.append({
@@ -520,12 +537,13 @@ else:
                         warehouse_remaining -= qty
                         qty_needed -= qty
         
-                    # 2. Prioritized overstocked sources
-                    source_outlets = list(overstocked_remaining.keys())
+                    # B. Use overstocked (not needed at all) sources, prioritized
                     if outlet_lookup:
-                        prioritized_sources = prioritize_sources(need["Outlet"], source_outlets, outlet_lookup)
+                        prioritized_sources = prioritize_sources(
+                            need["Outlet"], list(overstocked_remaining.keys()), outlet_lookup
+                        )
                     else:
-                        prioritized_sources = source_outlets
+                        prioritized_sources = list(overstocked_remaining.keys())
         
                     for outlet_name in prioritized_sources:
                         available = overstocked_remaining[outlet_name]
@@ -545,6 +563,27 @@ else:
                         qty_needed -= qty
                         if qty_needed <= 0:
                             break  # Stop when need is satisfied
+        
+                    # C. (Optional) Use regular overstocked sources
+                    if qty_needed > 0:
+                        for outlet_name in regular_overstocked_remaining:
+                            available = regular_overstocked_remaining[outlet_name]
+                            if qty_needed <= 0 or available <= 0:
+                                continue
+                            qty = min(available, qty_needed)
+                            suggestions.append({
+                                "SKU": sku,
+                                "Product": need["SKU Name"],
+                                "From Outlet": outlet_name,
+                                "From Outlet Closing Inv": available,
+                                "To Outlet": need["Outlet"],
+                                "To Outlet Closing Inv": need["Closing Inventory"],
+                                "Qty to Transfer (suggested)": qty
+                            })
+                            regular_overstocked_remaining[outlet_name] -= qty
+                            qty_needed -= qty
+                            if qty_needed <= 0:
+                                break
         
             return pd.DataFrame(suggestions)
         
