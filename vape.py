@@ -204,10 +204,10 @@ else:
         st.set_page_config(page_title="🔮 Forecast Wizard", layout="wide", page_icon="📦")
         st.title("📦 Product Run-Out Forecaster")
         
-        # ✅ Google Sheets CSV export links
+        # ✅ Google Sheets CSV links
         SALES_FILE_LINK = "https://docs.google.com/spreadsheets/d/1oHWG7i0V08YQPHKARbdXjT_fbEFrmMg51LYtqZbDeag/export?format=csv"
         INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"
-        STORE_INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1HCkYJucTjkZ5qCtu4ImIEoX2E-wv1W4Mv3zpH726_ho/export?format=csv"
+        STORE_INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/YOUR_STORE_INVENTORY_SHEET_ID/export?format=csv"
     
         def download_csv(url):
             response = requests.get(url)
@@ -224,23 +224,23 @@ else:
             inventory_path = download_csv(INVENTORY_FILE_LINK)
             store_inv_path = download_csv(STORE_INVENTORY_FILE_LINK)
     
-            # ✅ Read CSVs
-            df1 = pd.read_csv(sales_path, thousands=",")
-            df2 = pd.read_csv(inventory_path, thousands=",")  # Warehouse
-            df3 = pd.read_csv(store_inv_path, thousands=",")  # Store Inventory
+            # ✅ Load data
+            df1 = pd.read_csv(sales_path, thousands=",")  # Sales
+            df2 = pd.read_csv(inventory_path, thousands=",")  # Warehouse inventory
+            df3 = pd.read_csv(store_inv_path, thousands=",")  # Store inventory
     
             # ✅ Normalize columns
             df1.columns = df1.columns.astype(str)
             df2.columns = df2.columns.astype(str)
             df3.columns = df3.columns.astype(str)
     
-            # ✅ Detect date columns in sales
+            # ✅ Detect weekly date columns in sales
             date_cols = [col for col in df1.columns if re.match(r"\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}", str(col))]
             if not date_cols:
                 st.error("❌ No valid weekly date columns found in the sales file.")
                 st.stop()
     
-            # ✅ Parse last date for forecasting
+            # ✅ Parse last date column for forecast
             last_col_header = date_cols[-1]
             cleaned_date = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', last_col_header.strip())
             last_date = datetime.datetime.strptime(cleaned_date, "%d %b %Y")
@@ -277,27 +277,24 @@ else:
             df3_grouped = df3.groupby("Product Name")[store_qty_col].sum().reset_index()
             df3_grouped.rename(columns={store_qty_col: "Store Qnty"}, inplace=True)
     
-            # ✅ Warehouse as primary DF
-            merged_df = df2_trimmed.copy()  # start with all warehouse products
+            # ✅ Warehouse as primary
+            merged_df = df2_trimmed.copy()
     
-            # Merge sales (left join → keep all warehouse products)
+            # Merge Sales (left join → keep all warehouse products)
             merged_df = pd.merge(merged_df, df1_trimmed, on="Product Name", how="left")
-    
-            # Fill missing sales data with 0
             for col in date_cols:
                 merged_df[col] = merged_df[col].fillna(0)
             merged_df["Product Code"] = merged_df["Product Code"].fillna("")
             merged_df[brand_col] = merged_df[brand_col].fillna("")
             merged_df[supplier_col] = merged_df[supplier_col].fillna("")
     
-            # Merge store inventory
+            # Merge Store Inventory
             merged_df = pd.merge(merged_df, df3_grouped, on="Product Name", how="left")
             merged_df["Store Qnty"] = merged_df["Store Qnty"].fillna(0)
     
             # ✅ Forecast calculations
             merged_df["Total Sold"] = merged_df[date_cols].sum(axis=1)
             merged_df["Avg Weekly Sold"] = merged_df[date_cols].mean(axis=1)
-    
             merged_df["Weeks Remaining"] = merged_df.apply(
                 lambda row: round(row["Warehouse Qnty"] / row["Avg Weekly Sold"], 1)
                 if row["Avg Weekly Sold"] > 0 else float('nan'),
@@ -315,9 +312,46 @@ else:
     
             st.success("✅ Forecast Completed Successfully!")
     
+            # ✅ Build suggestions for search
+            suggestions = []
+            for name in merged_df["Product Name"].dropna().unique():
+                suggestions.append(f"{name} [PRODUCT NAME]")
+            for code in merged_df["Product Code"].dropna().unique():
+                suggestions.append(f"{code} [PRODUCT CODE]")
+            for brand in merged_df[brand_col].dropna().unique():
+                suggestions.append(f"{brand} [BRAND]")
+            for supplier in merged_df[supplier_col].dropna().unique():
+                suggestions.append(f"{supplier} [SUPPLIER]")
+    
+            selected_items = st.multiselect(
+                "🔎 Search Product by Name, Code, Brand or Supplier:",
+                sorted(list(set(suggestions)))
+            )
+    
+            # ✅ Apply search filter
+            if selected_items:
+                conditions = pd.Series(False, index=merged_df.index)
+                for item in selected_items:
+                    if item.endswith("[PRODUCT NAME]"):
+                        value = item.replace("[PRODUCT NAME]", "").strip()
+                        conditions |= merged_df["Product Name"] == value
+                    elif item.endswith("[PRODUCT CODE]"):
+                        value = item.replace("[PRODUCT CODE]", "").strip()
+                        conditions |= merged_df["Product Code"] == value
+                    elif item.endswith("[BRAND]"):
+                        value = item.replace("[BRAND]", "").strip()
+                        conditions |= merged_df[brand_col] == value
+                    elif item.endswith("[SUPPLIER]"):
+                        value = item.replace("[SUPPLIER]", "").strip()
+                        conditions |= merged_df[supplier_col] == value
+    
+                filtered_df = merged_df[conditions]
+            else:
+                filtered_df = merged_df
+    
             # ✅ Display table
             st.dataframe(
-                merged_df[[
+                filtered_df[[
                     "Product Name", "Product Code", brand_col, supplier_col,
                     "Warehouse Qnty", "Store Qnty",
                     "Avg Weekly Sold", "Weeks Remaining",
