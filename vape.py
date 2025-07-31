@@ -207,7 +207,7 @@ else:
         # ✅ Google Sheets CSV export links
         SALES_FILE_LINK = "https://docs.google.com/spreadsheets/d/1oHWG7i0V08YQPHKARbdXjT_fbEFrmMg51LYtqZbDeag/export?format=csv"
         INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"
-        STORE_INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/YOUR_STORE_INVENTORY_SHEET_ID/export?format=csv"
+        STORE_INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1HCkYJucTjkZ5qCtu4ImIEoX2E-wv1W4Mv3zpH726_ho/export?format=csv"
     
         def download_csv(url):
             response = requests.get(url)
