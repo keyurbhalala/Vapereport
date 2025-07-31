@@ -308,7 +308,15 @@ else:
             # ✅ Recalculate totals & forecasts
             merged_df["Total Sold"] = merged_df[date_cols].sum(axis=1)
             merged_df["Avg Weekly Sold"] = merged_df[date_cols].mean(axis=1)
-            
+
+            if date_cols:
+                last_col_header = date_cols[-1]
+                cleaned_date = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', last_col_header.strip())
+                last_date = datetime.datetime.strptime(cleaned_date, "%d %b %Y")
+            else:
+                st.error("❌ Could not detect any sales date columns for forecasting.")
+                st.stop()
+                
             merged_df["Weeks Remaining"] = merged_df.apply(
                 lambda row: round(row["Warehouse Qnty"] / row["Avg Weekly Sold"], 1)
                 if row["Avg Weekly Sold"] > 0 else float('nan'),
