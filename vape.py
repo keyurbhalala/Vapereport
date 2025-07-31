@@ -287,21 +287,28 @@ else:
             df3_grouped.rename(columns={store_qty_col: "Store Qnty"}, inplace=True)
         
             # ✅ Merge DataFrames
-            merged_df = pd.merge(df1_trimmed, df2_trimmed, on="Product Name", how="left")
+            # ✅ Use Warehouse Inventory as primary dataset
+            merged_df = df2_trimmed.copy()  # Warehouse as base
+            
+            # ✅ Merge sales data (left join to keep all warehouse products)
+            merged_df = pd.merge(merged_df, df1_trimmed, on="Product Name", how="left")
+            
+            # Fill missing sales columns with 0
+            for col in date_cols:
+                merged_df[col] = merged_df[col].fillna(0)
+            
+            merged_df["Product Code"] = merged_df["Product Code"].fillna("")
+            merged_df[brand_col] = merged_df[brand_col].fillna("")
+            merged_df[supplier_col] = merged_df[supplier_col].fillna("")
+            
+            # ✅ Merge store inventory
             merged_df = pd.merge(merged_df, df3_grouped, on="Product Name", how="left")
-        
-            merged_df["Warehouse Qnty"] = merged_df["Warehouse Qnty"].fillna(0)
             merged_df["Store Qnty"] = merged_df["Store Qnty"].fillna(0)
-        
-            # ✅ Calculate totals & forecasts
+            
+            # ✅ Recalculate totals & forecasts
             merged_df["Total Sold"] = merged_df[date_cols].sum(axis=1)
             merged_df["Avg Weekly Sold"] = merged_df[date_cols].mean(axis=1)
-        
-            # Parse last date column
-            last_col_header = date_cols[-1]
-            cleaned_date = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', last_col_header.strip())
-            last_date = datetime.datetime.strptime(cleaned_date, "%d %b %Y")
-        
+            
             merged_df["Weeks Remaining"] = merged_df.apply(
                 lambda row: round(row["Warehouse Qnty"] / row["Avg Weekly Sold"], 1)
                 if row["Avg Weekly Sold"] > 0 else float('nan'),
@@ -316,7 +323,7 @@ else:
             merged_df["Status"] = merged_df["Warehouse Qnty"].apply(
                 lambda x: "❌ Out of Stock" if x <= 0 else "✅ In Stock"
             )
-        
+
             st.success("✅ Forecast Completed Successfully!")
         
             # ✅ CSS for wider table
