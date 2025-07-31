@@ -207,7 +207,7 @@ else:
         # ✅ Google Sheets CSV links
         SALES_FILE_LINK = "https://docs.google.com/spreadsheets/d/1oHWG7i0V08YQPHKARbdXjT_fbEFrmMg51LYtqZbDeag/export?format=csv"
         INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"
-        STORE_INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1HCkYJucTjkZ5qCtu4ImIEoX2E-wv1W4Mv3zpH726_ho/export?format=csv"
+        STORE_INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/YOUR_STORE_INVENTORY_SHEET_ID/export?format=csv"
     
         def download_csv(url):
             response = requests.get(url)
@@ -246,29 +246,43 @@ else:
             last_date = datetime.datetime.strptime(cleaned_date, "%d %b %Y")
     
             # ✅ Prepare Sales DF
-            product_col = df1.columns[0]
-            sku_col = df1.columns[1]
-            df1_trimmed = df1[[product_col, sku_col] + date_cols].copy()
-            df1_trimmed.rename(columns={product_col: "Product Name", sku_col: "Product Code"}, inplace=True)
-            df1_trimmed["Product Name"] = df1_trimmed["Product Name"].str.strip()
-            df1_trimmed["Product Code"] = df1_trimmed["Product Code"].astype(str).str.strip()
+            sales_trim = df1.copy()
+            sales_trim.rename(columns={
+                df1.columns[0]: "Product Name",
+                df1.columns[1]: "Product Code"
+            }, inplace=True)
+            sales_trim["Product Name"] = sales_trim["Product Name"].str.strip()
+            sales_trim["Product Code"] = sales_trim["Product Code"].astype(str).str.strip()
     
-            # Detect Brand & Supplier
+            # Detect Brand & Supplier in sales
             brand_col = next((col for col in df1.columns if "brand" in col.lower()), None)
             supplier_col = next((col for col in df1.columns if col.strip().lower() == "supplier"), None)
-            if not brand_col or not supplier_col:
-                st.error("❌ Missing 'Brand' or 'Supplier' column in sales file.")
-                st.stop()
     
-            df1_trimmed[brand_col] = df1[brand_col].astype(str).str.strip()
-            df1_trimmed[supplier_col] = df1[supplier_col].astype(str).str.strip()
-    
-            # ✅ Prepare Warehouse Inventory
+            # ✅ Prepare Warehouse Inventory (base)
             df2.rename(columns={df2.columns[0]: "Product Name"}, inplace=True)
-            df2_trimmed = df2[["Product Name", "Closing Inventory"]].copy()
-            df2_trimmed.rename(columns={"Closing Inventory": "Warehouse Qnty"}, inplace=True)
+            inv_trim = df2[[
+                "Product Name", "SKU", "Brand", "Supplier", "Closing Inventory"
+            ]].copy()
+            inv_trim.rename(columns={
+                "SKU": "Product Code",
+                "Closing Inventory": "Warehouse Qnty"
+            }, inplace=True)
     
-            # ✅ Prepare Store Inventory
+            # ✅ Merge Sales into Inventory (left join)
+            merged_df = pd.merge(inv_trim, sales_trim, on="Product Name", how="left", suffixes=("", "_sales"))
+    
+            # ✅ Fill missing sales data with 0
+            for col in date_cols:
+                merged_df[col] = merged_df[col].fillna(0)
+    
+            # ✅ Fill Brand/Supplier/Product Code for 0-sale products
+            merged_df["Product Code"] = merged_df["Product Code_sales"].fillna(merged_df["Product Code"])
+            if brand_col:
+                merged_df[brand_col] = merged_df[brand_col].fillna(merged_df["Brand"])
+            if supplier_col:
+                merged_df[supplier_col] = merged_df[supplier_col].fillna(merged_df["Supplier"])
+    
+            # ✅ Merge Store Inventory
             df3.rename(columns={df3.columns[0]: "Product Name"}, inplace=True)
             store_qty_col = next(
                 (col for col in df3.columns if "closing" in col.lower() or "stock" in col.lower() or "quantity" in col.lower()), 
@@ -276,19 +290,6 @@ else:
             )
             df3_grouped = df3.groupby("Product Name")[store_qty_col].sum().reset_index()
             df3_grouped.rename(columns={store_qty_col: "Store Qnty"}, inplace=True)
-    
-            # ✅ Warehouse as primary
-            merged_df = df2_trimmed.copy()
-    
-            # Merge Sales (left join → keep all warehouse products)
-            merged_df = pd.merge(merged_df, df1_trimmed, on="Product Name", how="left")
-            for col in date_cols:
-                merged_df[col] = merged_df[col].fillna(0)
-            merged_df["Product Code"] = merged_df["Product Code"].fillna("")
-            merged_df[brand_col] = merged_df[brand_col].fillna("")
-            merged_df[supplier_col] = merged_df[supplier_col].fillna("")
-    
-            # Merge Store Inventory
             merged_df = pd.merge(merged_df, df3_grouped, on="Product Name", how="left")
             merged_df["Store Qnty"] = merged_df["Store Qnty"].fillna(0)
     
@@ -318,9 +319,9 @@ else:
                 suggestions.append(f"{name} [PRODUCT NAME]")
             for code in merged_df["Product Code"].dropna().unique():
                 suggestions.append(f"{code} [PRODUCT CODE]")
-            for brand in merged_df[brand_col].dropna().unique():
+            for brand in merged_df["Brand"].dropna().unique():
                 suggestions.append(f"{brand} [BRAND]")
-            for supplier in merged_df[supplier_col].dropna().unique():
+            for supplier in merged_df["Supplier"].dropna().unique():
                 suggestions.append(f"{supplier} [SUPPLIER]")
     
             selected_items = st.multiselect(
@@ -340,10 +341,10 @@ else:
                         conditions |= merged_df["Product Code"] == value
                     elif item.endswith("[BRAND]"):
                         value = item.replace("[BRAND]", "").strip()
-                        conditions |= merged_df[brand_col] == value
+                        conditions |= merged_df["Brand"] == value
                     elif item.endswith("[SUPPLIER]"):
                         value = item.replace("[SUPPLIER]", "").strip()
-                        conditions |= merged_df[supplier_col] == value
+                        conditions |= merged_df["Supplier"] == value
     
                 filtered_df = merged_df[conditions]
             else:
@@ -352,7 +353,7 @@ else:
             # ✅ Display table
             st.dataframe(
                 filtered_df[[
-                    "Product Name", "Product Code", brand_col, supplier_col,
+                    "Product Name", "Product Code", "Brand", "Supplier",
                     "Warehouse Qnty", "Store Qnty",
                     "Avg Weekly Sold", "Weeks Remaining",
                     "Estimated Run-Out Date", "Status"
