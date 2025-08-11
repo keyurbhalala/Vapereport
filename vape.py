@@ -414,7 +414,7 @@ else:
             # ---------------- Display ----------------
             st.dataframe(
                 show_df[[
-                    "Product Name", "Product Code", "Brand", "Supplier", "Supplier Code",
+                    "Product Name", "Product Code",
                     "Warehouse Qnty", "Store Qnty",
                     "Avg Weekly Sold", "Weeks Remaining", "Estimated Run-Out Date", "Status"
                 ]],
@@ -753,6 +753,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
