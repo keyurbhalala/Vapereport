@@ -334,17 +334,30 @@ else:
             # Fill weekly NaN with 0 so 0-sale products remain visible
             for c in date_cols:
                 merged[c] = pd.to_numeric(merged[c], errors="coerce").fillna(0)
-    
-            # Prefer inventory identity fields; fallback to sales only if missing
+            
+            # Make sure identity columns exist (from inventory)
+            if "Brand" not in merged.columns:    merged["Brand"] = ""
+            if "Supplier" not in merged.columns: merged["Supplier"] = ""
+            
+            # Map sales column names AFTER suffixing
+            brand_sales_col    = next((c for c in df_sales.columns if "brand" in c.lower()), None)
+            supplier_sales_col = next((c for c in df_sales.columns if c.strip().lower() == "supplier"), None)
+            
+            brand_sales_merged    = f"{brand_sales_col}_sales"    if brand_sales_col else None
+            supplier_sales_merged = f"{supplier_sales_col}_sales" if supplier_sales_col else None
+            
+            # Prefer inventory values; fallback to sales *_sales columns only if inventory is blank
             if "Product Code_sales" in merged.columns:
                 merged["Product Code"] = merged["Product Code"].replace("", pd.NA).fillna(merged["Product Code_sales"])
-            if brand_sales_col and brand_sales_col in merged.columns:
-                merged["Brand"] = merged["Brand"].replace("", pd.NA).fillna(merged[brand_sales_col])
-            if supplier_sales_col and supplier_sales_col in merged.columns:
-                merged["Supplier"] = merged["Supplier"].replace("", pd.NA).fillna(merged[supplier_sales_col])
-    
-            # Cleanup helper cols
-            drop_cols = [c for c in ["Product Code_sales", brand_sales_col, supplier_sales_col, "__mult"] if c in merged.columns]
+            
+            if brand_sales_merged and brand_sales_merged in merged.columns:
+                merged["Brand"] = merged["Brand"].replace("", pd.NA).fillna(merged[brand_sales_merged])
+            
+            if supplier_sales_merged and supplier_sales_merged in merged.columns:
+                merged["Supplier"] = merged["Supplier"].replace("", pd.NA).fillna(merged[supplier_sales_merged])
+            
+            # Clean up helper columns
+            drop_cols = [c for c in ["Product Code_sales", brand_sales_merged, supplier_sales_merged, "__mult"] if c and c in merged.columns]
             merged.drop(columns=drop_cols, inplace=True, errors="ignore")
     
             # ---------------- Merge: add Store Qnty ----------------
@@ -740,6 +753,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
