@@ -359,26 +359,40 @@ else:
             merged["Store Qnty"] = merged["Store Qnty"].fillna(0)
     
             # ======== Launch-aware average + smoothing ========
+            weeks_total = len(date_cols)  # e.g., 12
+
             def launch_aware_metrics(row):
-                vals = np.array([row[c] for c in date_cols], dtype=float)  # already scaled to units
+                vals = np.array([row[c] for c in date_cols], dtype=float)  # already unit-normalized
                 first_idx = next((i for i, v in enumerate(vals) if v > 0), None)
+            
                 if first_idx is None:
                     weeks_on_sale = 0
-                    total_after_launch = 0.0
+                    total_since_launch = 0.0
                 else:
                     weeks_on_sale = len(vals) - first_idx
-                    total_after_launch = float(vals[first_idx:].sum())
-                avg = (total_after_launch / weeks_on_sale) if weeks_on_sale > 0 else 0.0
-                return pd.Series({"Weeks on Sale": weeks_on_sale, "Total Sold": float(vals.sum()), "Avg Weekly Sold": round(avg, 2)})
-    
+                    total_since_launch = float(vals[first_idx:].sum())
+            
+                total_period = float(vals.sum())
+                return pd.Series({
+                    "Weeks on Sale": weeks_on_sale,
+                    "Total Sold (period)": total_period,
+                    "Total Since Launch": total_since_launch,
+                })
+            
             metrics = merged.apply(launch_aware_metrics, axis=1)
-            merged[["Weeks on Sale", "Total Sold", "Avg Weekly Sold"]] = metrics
-    
+            merged[["Weeks on Sale", "Total Sold (period)", "Total Since Launch"]] = metrics
+            
+            # 1) Plain period average (e.g., over 12 weeks)
+            merged["Avg Weekly Sold"] = (merged["Total Sold (period)"] / weeks_total).round(2)
+            
+            # 2) Launch-aware average (no smoothing): only weeks since first sale
             merged["Adj Avg Weekly Sold"] = merged.apply(
-                lambda r: r["Avg Weekly Sold"] if r["Weeks on Sale"] >= MIN_WEEKS
-                else round((r["Total Sold"] / MIN_WEEKS), 2), axis=1
+                lambda r: round((r["Total Since Launch"] / r["Weeks on Sale"]), 2) if r["Weeks on Sale"] > 0 else 0.0,
+                axis=1
             )
-            avg_col = "Adj Avg Weekly Sold" if USE_ADJUSTED else "Avg Weekly Sold"
+            
+            # Use whichever you prefer for forecasting:
+            avg_col = "Adj Avg Weekly Sold"   # or "Avg Weekly Sold"
     
             # ======== Forecast calculations (warehouse stock) ========
             merged["Weeks Remaining"] = merged.apply(
@@ -762,6 +776,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
