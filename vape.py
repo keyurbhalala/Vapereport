@@ -204,10 +204,14 @@ else:
         st.set_page_config(page_title="🔮 Forecast Wizard", layout="wide", page_icon="📦")
         st.title("📦 Product Run-Out Forecaster")
     
-        # ✅ Google Sheets CSV links
+        # ======== CONFIG: Google Sheets CSV links ========
         SALES_FILE_LINK = "https://docs.google.com/spreadsheets/d/1oHWG7i0V08YQPHKARbdXjT_fbEFrmMg51LYtqZbDeag/export?format=csv"
         INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"
         STORE_INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1HCkYJucTjkZ5qCtu4ImIEoX2E-wv1W4Mv3zpH726_ho/export?format=csv"
+    
+        # Forecast config
+        MIN_WEEKS = 4            # smoothing minimum
+        USE_ADJUSTED = True      # use adjusted average that spreads early weeks to MIN_WEEKS
     
         def download_csv(url):
             r = requests.get(url)
@@ -217,23 +221,22 @@ else:
                     return tmp.name
             raise Exception(f"Failed to download file from: {url}")
     
-        # --- helpers for pack-size conversion on SALES ---
+        # --- Helpers for pack-size conversion on SALES (e.g., "... 4x" → *4 and name "... 1x") ---
         pack_tail_re = re.compile(r"(\d+)\s*x$", re.IGNORECASE)
     
         def pack_multiplier_from_name(name: str) -> int:
-            if not isinstance(name, str): 
+            if not isinstance(name, str):
                 return 1
             m = pack_tail_re.search(name.strip())
             return int(m.group(1)) if m else 1
     
         def normalize_to_1x(name: str) -> str:
-            if not isinstance(name, str): 
+            if not isinstance(name, str):
                 return name
-            # Replace trailing "Nx" with "1x" to align with inventory naming
             return pack_tail_re.sub("1x", name.strip())
     
         try:
-            # ---------------- Load all 3 files ----------------
+            # ======== Load all 3 files ========
             sales_path = download_csv(SALES_FILE_LINK)
             inventory_path = download_csv(INVENTORY_FILE_LINK)
             store_inv_path = download_csv(STORE_INVENTORY_FILE_LINK)
@@ -247,20 +250,19 @@ else:
             df_inv.columns   = df_inv.columns.astype(str)
             df_store.columns = df_store.columns.astype(str)
     
-            # ---------------- Detect weekly date columns in sales ----------------
+            # ======== Detect weekly date columns in sales ========
             date_cols = [c for c in df_sales.columns
                          if re.match(r"\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}", str(c))]
             if not date_cols:
                 st.error("❌ No valid weekly date columns found in the sales file.")
                 st.stop()
     
-            # last_date (use sales header)
+            # last_date from sales headers
             last_col_header = date_cols[-1]
             cleaned_date = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', last_col_header.strip())
             last_date = datetime.datetime.strptime(cleaned_date, "%d %b %Y")
     
-            # ---------------- Prepare WAREHOUSE INVENTORY (authoritative) ----------------
-            # Required columns present: SKU Name, SKU, Supplier Code, Brand, Supplier, Category, Tag, Closing Inventory
+            # ======== Prepare INVENTORY (authoritative identity, base DF) ========
             def inv_get(name):
                 return next((c for c in df_inv.columns if c.strip().lower() == name.lower()), None)
     
@@ -288,35 +290,33 @@ else:
             inv_trim["Product Name"] = inv_trim["Product Name"].astype(str).str.strip()
             inv_trim["Product Code"] = inv_trim["Product Code"].astype(str).str.strip()
     
-            # ---------------- Prepare SALES (normalize name to 1x and scale weeks) ----------------
+            # ======== Prepare SALES (normalize names to 1x and scale quantities by trailing Nx) ========
             sales_trim = df_sales.copy()
-            # First two columns are: Product Name, Product Code (from your earlier code)
             sales_trim.rename(columns={
                 df_sales.columns[0]: "Product Name",
                 df_sales.columns[1]: "Product Code"
             }, inplace=True)
     
-            # Ensure numeric weekly columns
+            # numeric weekly columns
             for c in date_cols:
                 sales_trim[c] = pd.to_numeric(sales_trim[c], errors="coerce").fillna(0)
     
-            # Compute multiplier from original sales name, then normalize Product Name to 1x
+            # compute multiplier from original sales product name; then normalize name to 1x
             sales_trim["__mult"] = sales_trim["Product Name"].apply(pack_multiplier_from_name)
             sales_trim[date_cols] = sales_trim[date_cols].mul(sales_trim["__mult"], axis=0)
             sales_trim["Product Name"] = sales_trim["Product Name"].apply(normalize_to_1x)
     
-            # Tidy sales ids (not authoritative; inventory will override if present)
+            # keep tidy ids
             sales_trim["Product Name"] = sales_trim["Product Name"].astype(str).str.strip()
             sales_trim["Product Code"] = sales_trim["Product Code"].astype(str).str.strip()
     
-            # Try to capture optional brand/supplier columns in sales if they exist
+            # optional brand/supplier column names in sales
             brand_sales_col    = next((c for c in df_sales.columns if "brand" in c.lower()), None)
             supplier_sales_col = next((c for c in df_sales.columns if c.strip().lower() == "supplier"), None)
     
-            # ---------------- Prepare STORE INVENTORY (sum to Store Qnty) ----------------
-            store_name_col = df_store.columns[0]  # assume 1st column is product name
-            df_store = df_store.rename(columns={store_name_col: "Product Name"}).copy()
-            # Normalize name to 1x as well (just in case)
+            # ======== Prepare STORE INVENTORY (sum to Store Qnty) ========
+            # assume first column is product name in store file
+            df_store = df_store.rename(columns={df_store.columns[0]: "Product Name"}).copy()
             df_store["Product Name"] = df_store["Product Name"].astype(str).str.strip().apply(normalize_to_1x)
     
             store_qty_col = next((c for c in df_store.columns
@@ -328,62 +328,69 @@ else:
             df_store_grouped = df_store.groupby("Product Name")[store_qty_col].sum().reset_index()
             df_store_grouped.rename(columns={store_qty_col: "Store Qnty"}, inplace=True)
     
-            # ---------------- Merge: Warehouse base -> Sales (by Product Name) ----------------
+            # ======== Merge: Inventory base → Sales (by Product Name) ========
             merged = pd.merge(inv_trim, sales_trim, on="Product Name", how="left", suffixes=("", "_sales"))
     
             # Fill weekly NaN with 0 so 0-sale products remain visible
             for c in date_cols:
                 merged[c] = pd.to_numeric(merged[c], errors="coerce").fillna(0)
-            
-            # Make sure identity columns exist (from inventory)
+    
+            # Ensure Brand/Supplier exist (from inventory); then fallback to sales *_sales if inventory blank
             if "Brand" not in merged.columns:    merged["Brand"] = ""
             if "Supplier" not in merged.columns: merged["Supplier"] = ""
-            
-            # Map sales column names AFTER suffixing
-            brand_sales_col    = next((c for c in df_sales.columns if "brand" in c.lower()), None)
-            supplier_sales_col = next((c for c in df_sales.columns if c.strip().lower() == "supplier"), None)
-            
+    
             brand_sales_merged    = f"{brand_sales_col}_sales"    if brand_sales_col else None
             supplier_sales_merged = f"{supplier_sales_col}_sales" if supplier_sales_col else None
-            
-            # Prefer inventory values; fallback to sales *_sales columns only if inventory is blank
+    
             if "Product Code_sales" in merged.columns:
                 merged["Product Code"] = merged["Product Code"].replace("", pd.NA).fillna(merged["Product Code_sales"])
-            
             if brand_sales_merged and brand_sales_merged in merged.columns:
                 merged["Brand"] = merged["Brand"].replace("", pd.NA).fillna(merged[brand_sales_merged])
-            
             if supplier_sales_merged and supplier_sales_merged in merged.columns:
                 merged["Supplier"] = merged["Supplier"].replace("", pd.NA).fillna(merged[supplier_sales_merged])
-            
-            # Clean up helper columns
+    
+            # Cleanup helper/suffix columns
             drop_cols = [c for c in ["Product Code_sales", brand_sales_merged, supplier_sales_merged, "__mult"] if c and c in merged.columns]
             merged.drop(columns=drop_cols, inplace=True, errors="ignore")
     
-            # ---------------- Merge: add Store Qnty ----------------
+            # ======== Merge: add Store Qnty ========
             merged = pd.merge(merged, df_store_grouped, on="Product Name", how="left")
             merged["Store Qnty"] = merged["Store Qnty"].fillna(0)
     
-            # ---------------- Forecast metrics ----------------
-            merged["Total Sold"] = merged[date_cols].sum(axis=1)
-            merged["Avg Weekly Sold"] = merged[date_cols].mean(axis=1)
+            # ======== Launch-aware average + smoothing ========
+            def launch_aware_metrics(row):
+                vals = np.array([row[c] for c in date_cols], dtype=float)  # already scaled to units
+                first_idx = next((i for i, v in enumerate(vals) if v > 0), None)
+                if first_idx is None:
+                    weeks_on_sale = 0
+                    total_after_launch = 0.0
+                else:
+                    weeks_on_sale = len(vals) - first_idx
+                    total_after_launch = float(vals[first_idx:].sum())
+                avg = (total_after_launch / weeks_on_sale) if weeks_on_sale > 0 else 0.0
+                return pd.Series({"Weeks on Sale": weeks_on_sale, "Total Sold": float(vals.sum()), "Avg Weekly Sold": round(avg, 2)})
     
+            metrics = merged.apply(launch_aware_metrics, axis=1)
+            merged[["Weeks on Sale", "Total Sold", "Avg Weekly Sold"]] = metrics
+    
+            merged["Adj Avg Weekly Sold"] = merged.apply(
+                lambda r: r["Avg Weekly Sold"] if r["Weeks on Sale"] >= MIN_WEEKS
+                else round((r["Total Sold"] / MIN_WEEKS), 2), axis=1
+            )
+            avg_col = "Adj Avg Weekly Sold" if USE_ADJUSTED else "Avg Weekly Sold"
+    
+            # ======== Forecast calculations (warehouse stock) ========
             merged["Weeks Remaining"] = merged.apply(
-                lambda r: round(r["Warehouse Qnty"] / r["Avg Weekly Sold"], 1)
-                if r["Avg Weekly Sold"] > 0 else float('nan'),
-                axis=1
+                lambda r: round(r["Warehouse Qnty"] / r[avg_col], 1) if r[avg_col] > 0 else np.nan, axis=1
             )
             merged["Estimated Run-Out Date"] = merged["Weeks Remaining"].apply(
-                lambda w: (last_date + datetime.timedelta(weeks=w)) if pd.notna(w) else None
-            )
-            merged["Estimated Run-Out Date"] = merged["Estimated Run-Out Date"].apply(
-                lambda d: d.strftime("%Y-%m-%d") if pd.notna(d) else ""
+                lambda w: (last_date + datetime.timedelta(weeks=w)).strftime("%Y-%m-%d") if pd.notna(w) else ""
             )
             merged["Status"] = merged["Warehouse Qnty"].apply(lambda x: "❌ Out of Stock" if x <= 0 else "✅ In Stock")
     
-            st.success("✅ Forecast Completed Successfully (sales normalized to per-unit using trailing Nx).")
+            st.success("✅ Forecast Completed Successfully (sales normalized to units; launch-aware averages with smoothing).")
     
-            # ---------------- Search bar (by inventory-backed fields) ----------------
+            # ======== Search bar (inventory-backed fields) ========
             suggestions = []
             suggestions += [f"{x} [PRODUCT NAME]" for x in merged["Product Name"].dropna().unique()]
             suggestions += [f"{x} [PRODUCT CODE]" for x in merged["Product Code"].dropna().unique()]
@@ -411,12 +418,13 @@ else:
             else:
                 show_df = merged
     
-            # ---------------- Display ----------------
+            # ======== Display ========
             st.dataframe(
                 show_df[[
-                    "Product Name", "Product Code",
+                    "Product Name", "Product Code", "Brand", "Supplier", "Supplier Code",
                     "Warehouse Qnty", "Store Qnty",
-                    "Avg Weekly Sold", "Weeks Remaining", "Estimated Run-Out Date", "Status"
+                    "Weeks on Sale", "Avg Weekly Sold", "Adj Avg Weekly Sold",
+                    "Weeks Remaining", "Estimated Run-Out Date", "Status"
                 ]],
                 use_container_width=True, height=800
             )
@@ -753,6 +761,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
