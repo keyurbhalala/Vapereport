@@ -438,7 +438,7 @@ else:
                 show_df[[
                     "Product Name", "Product Code", "Brand",
                     "Warehouse Qnty", "Store Qnty",
-                    "Weeks on Sale", "Avg Weekly Sold", "Adj Avg Weekly Sold",
+                    "Weeks on Sale", "Adj Avg Weekly Sold",
                     "Weeks Remaining", "Estimated Run-Out Date", "Status"
                 ]],
                 use_container_width=True, height=800
@@ -776,6 +776,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
