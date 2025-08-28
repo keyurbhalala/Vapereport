@@ -447,7 +447,7 @@ else:
             
             PAGE_KEY = "runout"  # different from the restock page
             def k(name): return f"{PAGE_KEY}:{name}"
-            selected = st.multiselect("🔎 Search by Name, Code, Brand, Supplier, Tag:", sorted(list(set(suggestions))),key="key=k("search")")
+            selected = st.multiselect("🔎 Search by Name, Code, Brand, Supplier, Tag:", sorted(list(set(suggestions))),key=k("search"))
     
             if selected:
                 mask = pd.Series(False, index=merged.index)
