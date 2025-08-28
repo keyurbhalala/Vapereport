@@ -477,8 +477,8 @@ else:
                     "Product Name", "Product Code", "Brand",
                     "Warehouse Qnty", "Store Qnty",
                     "Weeks on Sale", "Adj Avg Weekly Sold",
-                    "Weeks Remaining", "Estimated Run-Out Date", "Status",
-                    "Tags"  # show normalized tags
+                    "Weeks Remaining", "Estimated Run-Out Date", "Status"
+                    #"Tags"  # show normalized tags
                 ]],
                 use_container_width=True, height=800
             )
@@ -816,6 +816,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
