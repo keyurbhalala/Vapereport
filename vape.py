@@ -444,8 +444,10 @@ else:
             suggestions += [f"{x} [SUPPLIER]"     for x in merged["Supplier"].dropna().unique()]
             unique_tags = sorted({t for lst in merged["Tags List"] for t in lst})
             suggestions += [f"{t} [TAG]" for t in unique_tags]
-    
-            selected = st.multiselect("🔎 Search by Name, Code, Brand, Supplier, Tag:", sorted(list(set(suggestions))),key="search_selector_v1")
+            
+            PAGE_KEY = "runout"  # different from the restock page
+            def k(name): return f"{PAGE_KEY}:{name}"
+            selected = st.multiselect("🔎 Search by Name, Code, Brand, Supplier, Tag:", sorted(list(set(suggestions))),key="key=k("search")")
     
             if selected:
                 mask = pd.Series(False, index=merged.index)
@@ -749,6 +751,7 @@ else:
                     "Limit suggestions to these destination outlets (To Outlet)",
                     options=all_outlets,
                     help="Leave empty to allow suggestions for all stores"
+                    key=k("to_outlets")
                 )
                 st.markdown("Filters are **ANDed** together.")
         
@@ -816,6 +819,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
