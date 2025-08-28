@@ -485,9 +485,6 @@ else:
     
         except Exception as e:
             st.error(f"❌ Error: {e}")
-    
-    if __name__ == "__main__":
-        runout_forecaster()
     # --- App 4 ---
     def Product_Merge_Tool():
         st.set_page_config(page_title="Product Merge Tool", page_icon="📦", layout="centered")
@@ -819,6 +816,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
