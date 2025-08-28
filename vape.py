@@ -445,7 +445,7 @@ else:
             unique_tags = sorted({t for lst in merged["Tags List"] for t in lst})
             suggestions += [f"{t} [TAG]" for t in unique_tags]
     
-            selected = st.multiselect("🔎 Search by Name, Code, Brand, Supplier, Tag:", sorted(list(set(suggestions))))
+            selected = st.multiselect("🔎 Search by Name, Code, Brand, Supplier, Tag:", sorted(list(set(suggestions))),key="search_selector_v1")
     
             if selected:
                 mask = pd.Series(False, index=merged.index)
@@ -816,6 +816,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
