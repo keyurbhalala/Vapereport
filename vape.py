@@ -415,15 +415,21 @@ else:
             metrics = merged.apply(launch_aware_metrics, axis=1)
             merged[["Weeks on Sale", "Total Sold (period)", "Total Since Launch"]] = metrics
     
-            # 1) Plain period average
-            merged["Avg Weekly Sold"] = (merged["Total Sold (period)"] / (weeks_total - 1)).round(2)
-    
-            # 2) Launch-aware average
-            merged["Adj Avg Weekly Sold"] = merged.apply(
-                lambda r: round((r["Total Since Launch"] / (r["Weeks on Sale"] - 1)), 2) if r["Weeks on Sale"] > 0 else r["Total Since Launch"],
-                axis=1
-            )
-            avg_col = "Adj Avg Weekly Sold"   # or "Avg Weekly Sold"
+           # --- 1) Plain period average (safe if only 1 week of data) ---
+            if weeks_total > 1:
+                merged["Avg Weekly Sold"] = (merged["Total Sold (period)"] / (weeks_total - 1)).round(2)
+            else:
+                merged["Avg Weekly Sold"] = 0.0
+            
+            # --- 2) Launch-aware average (safe & vectorized) ---
+            wk  = pd.to_numeric(merged["Weeks on Sale"], errors="coerce").fillna(0)
+            tsl = pd.to_numeric(merged["Total Since Launch"], errors="coerce").fillna(0)
+            
+            merged["Adj Avg Weekly Sold"] = 0.0
+            mask = wk > 1                      # only compute when weeks >= 2
+            merged.loc[mask, "Adj Avg Weekly Sold"] = (tsl[mask] / (wk[mask] - 1)).round(2)
+            
+            avg_col = "Adj Avg Weekly Sold"    # or "Avg Weekly Sold"
     
             # ======== Forecast calculations (warehouse stock) ========
             merged["Weeks Remaining"] = merged.apply(
@@ -816,6 +822,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
