@@ -416,11 +416,11 @@ else:
             merged[["Weeks on Sale", "Total Sold (period)", "Total Since Launch"]] = metrics
     
             # 1) Plain period average
-            merged["Avg Weekly Sold"] = (merged["Total Sold (period)"] / weeks_total).round(2)
+            merged["Avg Weekly Sold"] = (merged["Total Sold (period)"] / (weeks_total - 1)).round(2)
     
             # 2) Launch-aware average
             merged["Adj Avg Weekly Sold"] = merged.apply(
-                lambda r: round((r["Total Since Launch"] / r["Weeks on Sale"]), 2) if r["Weeks on Sale"] > 0 else 0.0,
+                lambda r: round((r["Total Since Launch"] / (r["Weeks on Sale"] - 1)), 2) if r["Weeks on Sale"] > 0 else 0.0,
                 axis=1
             )
             avg_col = "Adj Avg Weekly Sold"   # or "Avg Weekly Sold"
@@ -816,6 +816,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
