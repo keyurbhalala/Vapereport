@@ -292,7 +292,7 @@ else:
                 pd.DataFrame({"Unmatched Products": unmatched_products}).to_excel(
                     writer, index=False, sheet_name="Unmatched_Subset")
         output.seek(0)
-        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         st.download_button(
             "📥 Download Excel",
             data=output.getvalue(),
@@ -922,6 +922,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
