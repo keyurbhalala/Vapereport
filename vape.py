@@ -127,29 +127,12 @@ else:
     def inventory_matcher():
         st.header("📦 Product Strength-wise Inventory Matcher")
     
-        # ========= CONFIG (edit defaults if you like) =========
-        SHEET_ID = "1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8"   # your inventory sheet
-        WORKSHEET_NAME = "inventory"                                # tab name
-        DEFAULT_SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
+        # ====== CONFIG: data sources ======
+        SHEET_ID = "1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8"   # inventory sheet ID
+        WORKSHEET_NAME = "inventory"                               # tab name
+        SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
-        # --------- Source controls (non-blocking; keep it simple) ---------
-        with st.expander("⚙️ Data sources"):
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                sheet_id_or_url = st.text_input(
-                    "Inventory Google Sheet (ID or full URL)",
-                    value=SHEET_ID,
-                    help="If you paste a full URL, the app will extract the ID."
-                )
-            with c2:
-                worksheet_name = st.text_input("Worksheet (tab) name", value=WORKSHEET_NAME)
-    
-            shortlist_url = st.text_input(
-                "Shortlisted products file (GitHub RAW URL for .csv or .xlsx)",
-                value=DEFAULT_SHORTLIST_URL
-            )
-    
-        # --------- Matching controls ----------
+        # ====== Controls ======
         colA, colB, colC = st.columns([1,1,1])
         with colA:
             valid_strengths = st.multiselect(
@@ -165,10 +148,10 @@ else:
                 index=0
             )
     
-        # --------- Helpers ----------
+        # ====== Helpers ======
         def normalize_name(name: str) -> str:
             s = str(name).lower()
-            s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)  # remove “20mg”, “20 mg”, etc.
+            s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)
             s = re.sub(r"[^a-z0-9]+", " ", s).strip()
             return s
     
@@ -181,31 +164,22 @@ else:
             return f"{m.group(1)}mg".lower() if m else None
     
         @st.cache_data(show_spinner=False)
-        def load_google_sheet_df(sheet_id_or_url: str, worksheet_name: str) -> pd.DataFrame:
-            # Accept full URL or just the ID
-            sid = sheet_id_or_url.strip()
-            if "/d/" in sid:
-                sid = sid.split("/d/")[1].split("/")[0]
+        def load_google_sheet_df(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
             scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
             creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
             gc = gspread.authorize(creds)
-            sh = gc.open_by_key(sid)
-            try:
-                ws = sh.worksheet(worksheet_name) if worksheet_name else sh.get_worksheet(0)
-            except gspread.WorksheetNotFound:
-                ws = sh.get_worksheet(0)
+            sh = gc.open_by_key(sheet_id)
+            ws = sh.worksheet(worksheet_name)
             rows = ws.get_all_values()
             if not rows:
                 return pd.DataFrame()
-            df = pd.DataFrame(rows[1:], columns=[c.strip() for c in rows[0]])
-            return df
+            return pd.DataFrame(rows[1:], columns=[c.strip() for c in rows[0]])
     
         @st.cache_data(show_spinner=False)
-        def load_shortlist_from_github(url: str) -> pd.DataFrame:
+        def load_shortlist(url: str) -> pd.DataFrame:
             u = url.lower().strip()
             if u.endswith(".csv"):
                 return pd.read_csv(url, dtype=str)
-            # pandas can read xlsx directly from http(s) if openpyxl installed
             return pd.read_excel(url, dtype=str)
     
         def pick_inventory_column(df):
@@ -220,48 +194,22 @@ else:
             default_idx = present.index("Closing Inventory") if "Closing Inventory" in present else 0
             return st.selectbox("Inventory column to sum", options=present, index=default_idx)
     
-        # ========= Load sources =========
+        # ====== Load data ======
         with st.spinner("Loading Full Inventory from Google Sheets…"):
-            df_full = load_google_sheet_df(sheet_id_or_url, worksheet_name)
-        if df_full.empty:
-            st.error("Google Sheet is empty or not accessible. Check sharing and tab name.")
-            return
+            df_full = load_google_sheet_df(SHEET_ID, WORKSHEET_NAME)
     
         with st.spinner("Loading Shortlisted Products from GitHub…"):
-            try:
-                df_subset = load_shortlist_from_github(shortlist_url)
-            except Exception as e:
-                st.error(f"Failed to load shortlist from GitHub: {e}")
-                return
+            df_subset = load_shortlist(SHORTLIST_URL)
     
-        # ========= Validate columns =========
-        for name, df in [("Full Inventory (Sheet)", df_full), ("Shortlist (GitHub)", df_subset)]:
-            if "SKU Name" not in df.columns:
-                st.error(f"{name} is missing required column: 'SKU Name'")
-                return
+        # ====== Validation ======
+        if "SKU Name" not in df_full.columns or "SKU Name" not in df_subset.columns:
+            st.error("Both sources must include a 'SKU Name' column.")
+            return
     
-        # ========= Optional pre-filters (faster, cleaner) =========
-        with st.expander("🔎 Optional filters (apply BEFORE matching)"):
-            colf1, colf2, colf3 = st.columns(3)
-            brands = sorted(df_full["Brand"].dropna().unique().tolist()) if "Brand" in df_full.columns else []
-            suppliers = sorted(df_full["Supplier"].dropna().unique().tolist()) if "Supplier" in df_full.columns else []
-            tags = sorted(df_full["Tag"].dropna().unique().tolist()) if "Tag" in df_full.columns else []
-    
-            brand_sel = colf1.multiselect("Brand", brands) if brands else []
-            supp_sel = colf2.multiselect("Supplier", suppliers) if suppliers else []
-            tag_sel = colf3.multiselect("Tag", tags) if tags else []
-    
-            if brand_sel:
-                df_full = df_full[df_full["Brand"].isin(brand_sel)]
-            if supp_sel:
-                df_full = df_full[df_full["Supplier"].isin(supp_sel)]
-            if tag_sel:
-                df_full = df_full[df_full["Tag"].isin(tag_sel)]
-    
-        # ========= Prepare fields =========
         inv_col = pick_inventory_column(df_full)
         df_full[inv_col] = pd.to_numeric(df_full[inv_col], errors="coerce").fillna(0)
     
+        # ====== Normalize & Strength ======
         strength_rx = build_strength_regex(valid_strengths)
         df_full = df_full.copy()
         df_full["NormName"] = df_full["SKU Name"].map(normalize_name)
@@ -270,7 +218,7 @@ else:
         scorer = fuzz.token_sort_ratio if match_scorer == "token_sort_ratio" else fuzz.WRatio
         corpus = df_full["NormName"].tolist()
     
-        # ========= Match =========
+        # ====== Matching ======
         matched_chunks, unmatched_products, no_strength_rows = [], [], []
     
         for prod in df_subset["SKU Name"].astype(str):
@@ -300,7 +248,7 @@ else:
             if len(block):
                 matched_chunks.append(block)
     
-        # ========= Output tables =========
+        # ====== Outputs ======
         if matched_chunks:
             matched_df = pd.concat(matched_chunks, ignore_index=True)
             cats = [s.lower() for s in valid_strengths]
@@ -331,7 +279,7 @@ else:
             st.dataframe(pivot_df, use_container_width=True)
         else:
             matched_df, pivot_df = pd.DataFrame(), pd.DataFrame()
-            st.info("No matches found with current settings. Try lowering the threshold or adjusting strengths.")
+            st.info("No matches found with current settings.")
     
         if unmatched_products:
             st.subheader("❓ Unmatched Products")
@@ -341,7 +289,7 @@ else:
             st.subheader("⚠️ Rows filtered out (no/invalid strength)")
             st.dataframe(pd.concat(no_strength_rows, ignore_index=True), use_container_width=True)
     
-        # ========= Excel export =========
+        # ====== Excel export ======
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             (matched_df if not matched_df.empty else pd.DataFrame({"note":["no matches"]})).to_excel(
@@ -982,6 +930,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
