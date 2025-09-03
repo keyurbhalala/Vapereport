@@ -126,10 +126,7 @@ else:
 
     def inventory_matcher():
         # ======== FIXED CONFIG (edit these two URLs) ========
-        INVENTORY_CSV_URL = (
-            "https://docs.google.com/spreadsheets/d/1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export"
-            "?format=csv&gid=1833175069"   # use your tab's gid; this is for Sheet1 from your screenshot
-        )
+        INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"
         SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
         # Fixed matching settings (no UI)
@@ -887,6 +884,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
