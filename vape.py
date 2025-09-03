@@ -123,20 +123,33 @@ else:
     
     
     # --- App 2 ---
+    
     def inventory_matcher():
         st.header("📦 Product Strength-wise Inventory Matcher")
     
-        # ====== CONFIG: your existing Sheet ======
-        SHEET_ID = "1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8"
-        WORKSHEET_NAME = "inventory"   # tab name from your screenshot
+        # ========= CONFIG (edit defaults if you like) =========
+        SHEET_ID = "1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8"   # your inventory sheet
+        WORKSHEET_NAME = "inventory"                                # tab name
+        DEFAULT_SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
-        # ====== Subset upload remains ======
-        file_subset = st.file_uploader(
-            "Upload Selected Product List (Excel or CSV)",
-            type=["xlsx", "csv"], key="subset"
-        )
+        # --------- Source controls (non-blocking; keep it simple) ---------
+        with st.expander("⚙️ Data sources"):
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                sheet_id_or_url = st.text_input(
+                    "Inventory Google Sheet (ID or full URL)",
+                    value=SHEET_ID,
+                    help="If you paste a full URL, the app will extract the ID."
+                )
+            with c2:
+                worksheet_name = st.text_input("Worksheet (tab) name", value=WORKSHEET_NAME)
     
-        # ------- Controls -------
+            shortlist_url = st.text_input(
+                "Shortlisted products file (GitHub RAW URL for .csv or .xlsx)",
+                value=DEFAULT_SHORTLIST_URL
+            )
+    
+        # --------- Matching controls ----------
         colA, colB, colC = st.columns([1,1,1])
         with colA:
             valid_strengths = st.multiselect(
@@ -152,10 +165,7 @@ else:
                 index=0
             )
     
-        # ------- Helpers -------
-        def read_file(uploaded):
-            return pd.read_csv(uploaded, dtype=str) if uploaded.name.lower().endswith(".csv") else pd.read_excel(uploaded, dtype=str)
-    
+        # --------- Helpers ----------
         def normalize_name(name: str) -> str:
             s = str(name).lower()
             s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)  # remove “20mg”, “20 mg”, etc.
@@ -171,13 +181,17 @@ else:
             return f"{m.group(1)}mg".lower() if m else None
     
         @st.cache_data(show_spinner=False)
-        def load_google_sheet_df(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
+        def load_google_sheet_df(sheet_id_or_url: str, worksheet_name: str) -> pd.DataFrame:
+            # Accept full URL or just the ID
+            sid = sheet_id_or_url.strip()
+            if "/d/" in sid:
+                sid = sid.split("/d/")[1].split("/")[0]
             scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
             creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
             gc = gspread.authorize(creds)
-            sh = gc.open_by_key(sheet_id)
+            sh = gc.open_by_key(sid)
             try:
-                ws = sh.worksheet(worksheet_name)
+                ws = sh.worksheet(worksheet_name) if worksheet_name else sh.get_worksheet(0)
             except gspread.WorksheetNotFound:
                 ws = sh.get_worksheet(0)
             rows = ws.get_all_values()
@@ -185,6 +199,14 @@ else:
                 return pd.DataFrame()
             df = pd.DataFrame(rows[1:], columns=[c.strip() for c in rows[0]])
             return df
+    
+        @st.cache_data(show_spinner=False)
+        def load_shortlist_from_github(url: str) -> pd.DataFrame:
+            u = url.lower().strip()
+            if u.endswith(".csv"):
+                return pd.read_csv(url, dtype=str)
+            # pandas can read xlsx directly from http(s) if openpyxl installed
+            return pd.read_excel(url, dtype=str)
     
         def pick_inventory_column(df):
             candidates = [
@@ -198,22 +220,27 @@ else:
             default_idx = present.index("Closing Inventory") if "Closing Inventory" in present else 0
             return st.selectbox("Inventory column to sum", options=present, index=default_idx)
     
-        # ===== MAIN =====
+        # ========= Load sources =========
         with st.spinner("Loading Full Inventory from Google Sheets…"):
-            df_full = load_google_sheet_df(SHEET_ID, WORKSHEET_NAME)
-    
+            df_full = load_google_sheet_df(sheet_id_or_url, worksheet_name)
         if df_full.empty:
-            st.error("Could not load the Google Sheet or it was empty. Check sharing and tab name.")
+            st.error("Google Sheet is empty or not accessible. Check sharing and tab name.")
             return
     
-        # Required column check (from your screenshot)
-        needed = {"SKU Name"}
-        missing = [c for c in needed if c not in df_full.columns]
-        if missing:
-            st.error(f"Full Inventory is missing required column(s): {', '.join(missing)}")
-            return
+        with st.spinner("Loading Shortlisted Products from GitHub…"):
+            try:
+                df_subset = load_shortlist_from_github(shortlist_url)
+            except Exception as e:
+                st.error(f"Failed to load shortlist from GitHub: {e}")
+                return
     
-        # Optional pre-filters to shrink search space (faster + cleaner)
+        # ========= Validate columns =========
+        for name, df in [("Full Inventory (Sheet)", df_full), ("Shortlist (GitHub)", df_subset)]:
+            if "SKU Name" not in df.columns:
+                st.error(f"{name} is missing required column: 'SKU Name'")
+                return
+    
+        # ========= Optional pre-filters (faster, cleaner) =========
         with st.expander("🔎 Optional filters (apply BEFORE matching)"):
             colf1, colf2, colf3 = st.columns(3)
             brands = sorted(df_full["Brand"].dropna().unique().tolist()) if "Brand" in df_full.columns else []
@@ -231,19 +258,10 @@ else:
             if tag_sel:
                 df_full = df_full[df_full["Tag"].isin(tag_sel)]
     
-        if file_subset is None:
-            st.info("Upload your Selected Product List to proceed.")
-            return
-    
-        df_subset = read_file(file_subset)
-        if "SKU Name" not in df_subset.columns:
-            st.error("Selected Product List must include a 'SKU Name' column.")
-            return
-    
+        # ========= Prepare fields =========
         inv_col = pick_inventory_column(df_full)
         df_full[inv_col] = pd.to_numeric(df_full[inv_col], errors="coerce").fillna(0)
     
-        # Normalize + strength extraction
         strength_rx = build_strength_regex(valid_strengths)
         df_full = df_full.copy()
         df_full["NormName"] = df_full["SKU Name"].map(normalize_name)
@@ -252,6 +270,7 @@ else:
         scorer = fuzz.token_sort_ratio if match_scorer == "token_sort_ratio" else fuzz.WRatio
         corpus = df_full["NormName"].tolist()
     
+        # ========= Match =========
         matched_chunks, unmatched_products, no_strength_rows = [], [], []
     
         for prod in df_subset["SKU Name"].astype(str):
@@ -281,6 +300,7 @@ else:
             if len(block):
                 matched_chunks.append(block)
     
+        # ========= Output tables =========
         if matched_chunks:
             matched_df = pd.concat(matched_chunks, ignore_index=True)
             cats = [s.lower() for s in valid_strengths]
@@ -321,7 +341,7 @@ else:
             st.subheader("⚠️ Rows filtered out (no/invalid strength)")
             st.dataframe(pd.concat(no_strength_rows, ignore_index=True), use_container_width=True)
     
-        # ---- Download Excel ----
+        # ========= Excel export =========
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             (matched_df if not matched_df.empty else pd.DataFrame({"note":["no matches"]})).to_excel(
@@ -962,6 +982,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
