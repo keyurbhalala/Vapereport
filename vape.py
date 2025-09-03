@@ -128,7 +128,7 @@ else:
         st.header("📦 Product Strength-wise Inventory Matcher")
     
         # ====== CONFIG: data sources ======
-        SHEET_ID = "1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8"   # inventory sheet ID
+        SHEET_ID = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"   # inventory sheet ID
         WORKSHEET_NAME = "Sheet1"                               # tab name
         SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
@@ -930,6 +930,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
