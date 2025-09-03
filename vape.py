@@ -127,12 +127,15 @@ else:
     def inventory_matcher():
         st.header("📦 Product Strength-wise Inventory Matcher")
     
-        # ====== CONFIG: data sources ======
-        SHEET_ID = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"   # inventory sheet ID
-        WORKSHEET_NAME = "Sheet1"                               # tab name
+        # ========= CONFIG (edit these) =========
+        # Use the exact sheet + tab you showed: Sheet ID and gid for 'Sheet1'
+        INVENTORY_CSV_URL = (
+            "https://docs.google.com/spreadsheets/d/1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export"
+            "?format=csv&gid=1833175069"
+        )
         SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
-        # ====== Controls ======
+        # -------- Matching controls --------
         colA, colB, colC = st.columns([1,1,1])
         with colA:
             valid_strengths = st.multiselect(
@@ -142,16 +145,12 @@ else:
         with colB:
             score_threshold = st.slider("Fuzzy match threshold", 70, 100, 85, 1)
         with colC:
-            match_scorer = st.selectbox(
-                "Fuzzy scorer",
-                options=["token_sort_ratio","WRatio"],
-                index=0
-            )
+            match_scorer = st.selectbox("Fuzzy scorer", ["token_sort_ratio","WRatio"], index=0)
     
-        # ====== Helpers ======
+        # -------- Helpers --------
         def normalize_name(name: str) -> str:
             s = str(name).lower()
-            s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)
+            s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)  # remove '20mg' / '20 mg'
             s = re.sub(r"[^a-z0-9]+", " ", s).strip()
             return s
     
@@ -164,16 +163,13 @@ else:
             return f"{m.group(1)}mg".lower() if m else None
     
         @st.cache_data(show_spinner=False)
-        def load_google_sheet_df(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
-            scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-            creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-            gc = gspread.authorize(creds)
-            sh = gc.open_by_key(sheet_id)
-            ws = sh.worksheet(worksheet_name)
-            rows = ws.get_all_values()
-            if not rows:
-                return pd.DataFrame()
-            return pd.DataFrame(rows[1:], columns=[c.strip() for c in rows[0]])
+        def load_inventory_csv(url: str) -> pd.DataFrame:
+            # direct read works, but requests+pd.read_csv on bytes is more robust
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            df = pd.read_csv(BytesIO(r.content), dtype=str)
+            df.columns = [c.strip() for c in df.columns]
+            return df
     
         @st.cache_data(show_spinner=False)
         def load_shortlist(url: str) -> pd.DataFrame:
@@ -194,14 +190,13 @@ else:
             default_idx = present.index("Closing Inventory") if "Closing Inventory" in present else 0
             return st.selectbox("Inventory column to sum", options=present, index=default_idx)
     
-        # ====== Load data ======
-        with st.spinner("Loading Full Inventory from Google Sheets…"):
-            df_full = load_google_sheet_df(SHEET_ID, WORKSHEET_NAME)
-    
-        with st.spinner("Loading Shortlisted Products from GitHub…"):
+        # ========= Load data =========
+        with st.spinner("Loading Full Inventory (CSV export)…"):
+            df_full = load_inventory_csv(INVENTORY_CSV_URL)
+        with st.spinner("Loading Shortlisted Products (GitHub)…"):
             df_subset = load_shortlist(SHORTLIST_URL)
     
-        # ====== Validation ======
+        # ========= Validate =========
         if "SKU Name" not in df_full.columns or "SKU Name" not in df_subset.columns:
             st.error("Both sources must include a 'SKU Name' column.")
             return
@@ -209,7 +204,7 @@ else:
         inv_col = pick_inventory_column(df_full)
         df_full[inv_col] = pd.to_numeric(df_full[inv_col], errors="coerce").fillna(0)
     
-        # ====== Normalize & Strength ======
+        # ========= Normalize + Strength =========
         strength_rx = build_strength_regex(valid_strengths)
         df_full = df_full.copy()
         df_full["NormName"] = df_full["SKU Name"].map(normalize_name)
@@ -218,7 +213,7 @@ else:
         scorer = fuzz.token_sort_ratio if match_scorer == "token_sort_ratio" else fuzz.WRatio
         corpus = df_full["NormName"].tolist()
     
-        # ====== Matching ======
+        # ========= Matching =========
         matched_chunks, unmatched_products, no_strength_rows = [], [], []
     
         for prod in df_subset["SKU Name"].astype(str):
@@ -248,7 +243,7 @@ else:
             if len(block):
                 matched_chunks.append(block)
     
-        # ====== Outputs ======
+        # ========= Outputs =========
         if matched_chunks:
             matched_df = pd.concat(matched_chunks, ignore_index=True)
             cats = [s.lower() for s in valid_strengths]
@@ -289,7 +284,7 @@ else:
             st.subheader("⚠️ Rows filtered out (no/invalid strength)")
             st.dataframe(pd.concat(no_strength_rows, ignore_index=True), use_container_width=True)
     
-        # ====== Excel export ======
+        # ========= Excel export =========
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             (matched_df if not matched_df.empty else pd.DataFrame({"note":["no matches"]})).to_excel(
@@ -930,6 +925,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
