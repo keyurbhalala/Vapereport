@@ -126,79 +126,219 @@ else:
     def inventory_matcher():
         st.header("📦 Product Strength-wise Inventory Matcher")
     
-        file_full = st.file_uploader("Upload Full Inventory File (Excel or CSV) From Vend", type=["xlsx", "csv"], key="full")
-        file_subset = st.file_uploader("Upload Selected Product List (Excel or CSV)", type=["xlsx", "csv"], key="subset")
+        # ====== CONFIG: your existing Sheet ======
+        SHEET_ID = "1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8"
+        WORKSHEET_NAME = "inventory"   # tab name from your screenshot
     
-        valid_strengths = ["20mg", "40mg", "50mg"]
+        # ====== Subset upload remains ======
+        file_subset = st.file_uploader(
+            "Upload Selected Product List (Excel or CSV)",
+            type=["xlsx", "csv"], key="subset"
+        )
     
-        def read_file(file):
-            return pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+        # ------- Controls -------
+        colA, colB, colC = st.columns([1,1,1])
+        with colA:
+            valid_strengths = st.multiselect(
+                "Strengths to include",
+                options=["10mg","20mg","30mg","40mg","45mg","50mg","60mg"],
+                default=["20mg","40mg","50mg"])
+        with colB:
+            score_threshold = st.slider("Fuzzy match threshold", 70, 100, 85, 1)
+        with colC:
+            match_scorer = st.selectbox(
+                "Fuzzy scorer",
+                options=["token_sort_ratio","WRatio"],
+                index=0
+            )
     
-        def normalize_name(name):
-            name = str(name).lower()
-            name = re.sub(r"\b(0|10|20|25|30|35|40|45|50|60|70|80|90|100) ?mg\b", "", name)
-            name = re.sub(r"[^a-z0-9]+", " ", name).strip()
-            return name
+        # ------- Helpers -------
+        def read_file(uploaded):
+            return pd.read_csv(uploaded, dtype=str) if uploaded.name.lower().endswith(".csv") else pd.read_excel(uploaded, dtype=str)
     
-        def extract_strength(name):
-            match = re.search(r"\b(20|40|50) ?mg\b", str(name).lower())
-            return f"{match.group(1)}mg" if match else None
+        def normalize_name(name: str) -> str:
+            s = str(name).lower()
+            s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)  # remove “20mg”, “20 mg”, etc.
+            s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+            return s
     
-        def match_and_gather_variants(df_full, df_subset):
-            df_full["NormName"] = df_full["SKU Name"].apply(normalize_name)
-            df_full["Strength"] = df_full["SKU Name"].apply(extract_strength)
+        def build_strength_regex(valid_strengths_list):
+            nums = [re.escape(s.replace("mg","").lower()) for s in valid_strengths_list] or ["20","40","50"]
+            return re.compile(rf"\b({'|'.join(nums)})\s?mg\b", flags=re.IGNORECASE)
     
-            results = []
-            for prod in df_subset["SKU Name"]:
-                norm = normalize_name(prod)
-                match_result = process.extractOne(norm, df_full["NormName"], scorer=fuzz.token_sort_ratio)
-                if match_result:
-                    match_name, score, _ = match_result
-                    if score >= 85:
-                        matched_rows = df_full[df_full["NormName"] == match_name]
-                        matched_rows = matched_rows[matched_rows["Strength"].isin(valid_strengths)]
-                        matched_rows["Matched Product"] = prod
-                        results.append(matched_rows)
+        def extract_strength(name, compiled_rx):
+            m = compiled_rx.search(str(name))
+            return f"{m.group(1)}mg".lower() if m else None
     
-            if results:
-                final_df = pd.concat(results)
-                final_df["Strength"] = pd.Categorical(final_df["Strength"], categories=valid_strengths, ordered=True)
-                pivot_df = (
-                    final_df.pivot_table(
-                        index="Matched Product",
-                        columns="Strength",
-                        values="Closing Inventory",
-                        aggfunc="sum",
-                        fill_value=0
-                    ).reindex(df_subset["SKU Name"]).reset_index()
+        @st.cache_data(show_spinner=False)
+        def load_google_sheet_df(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
+            scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+            creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+            gc = gspread.authorize(creds)
+            sh = gc.open_by_key(sheet_id)
+            try:
+                ws = sh.worksheet(worksheet_name)
+            except gspread.WorksheetNotFound:
+                ws = sh.get_worksheet(0)
+            rows = ws.get_all_values()
+            if not rows:
+                return pd.DataFrame()
+            df = pd.DataFrame(rows[1:], columns=[c.strip() for c in rows[0]])
+            return df
+    
+        def pick_inventory_column(df):
+            candidates = [
+                "Closing Inventory","Avail. Stock","Available Stock",
+                "Stock On Hand","On Hand","Stock","Quantity","Qty"
+            ]
+            present = [c for c in candidates if c in df.columns]
+            if not present:
+                numish = [c for c in df.columns if pd.to_numeric(df[c], errors="coerce").notna().any()]
+                present = numish or df.columns.tolist()
+            default_idx = present.index("Closing Inventory") if "Closing Inventory" in present else 0
+            return st.selectbox("Inventory column to sum", options=present, index=default_idx)
+    
+        # ===== MAIN =====
+        with st.spinner("Loading Full Inventory from Google Sheets…"):
+            df_full = load_google_sheet_df(SHEET_ID, WORKSHEET_NAME)
+    
+        if df_full.empty:
+            st.error("Could not load the Google Sheet or it was empty. Check sharing and tab name.")
+            return
+    
+        # Required column check (from your screenshot)
+        needed = {"SKU Name"}
+        missing = [c for c in needed if c not in df_full.columns]
+        if missing:
+            st.error(f"Full Inventory is missing required column(s): {', '.join(missing)}")
+            return
+    
+        # Optional pre-filters to shrink search space (faster + cleaner)
+        with st.expander("🔎 Optional filters (apply BEFORE matching)"):
+            colf1, colf2, colf3 = st.columns(3)
+            brands = sorted(df_full["Brand"].dropna().unique().tolist()) if "Brand" in df_full.columns else []
+            suppliers = sorted(df_full["Supplier"].dropna().unique().tolist()) if "Supplier" in df_full.columns else []
+            tags = sorted(df_full["Tag"].dropna().unique().tolist()) if "Tag" in df_full.columns else []
+    
+            brand_sel = colf1.multiselect("Brand", brands) if brands else []
+            supp_sel = colf2.multiselect("Supplier", suppliers) if suppliers else []
+            tag_sel = colf3.multiselect("Tag", tags) if tags else []
+    
+            if brand_sel:
+                df_full = df_full[df_full["Brand"].isin(brand_sel)]
+            if supp_sel:
+                df_full = df_full[df_full["Supplier"].isin(supp_sel)]
+            if tag_sel:
+                df_full = df_full[df_full["Tag"].isin(tag_sel)]
+    
+        if file_subset is None:
+            st.info("Upload your Selected Product List to proceed.")
+            return
+    
+        df_subset = read_file(file_subset)
+        if "SKU Name" not in df_subset.columns:
+            st.error("Selected Product List must include a 'SKU Name' column.")
+            return
+    
+        inv_col = pick_inventory_column(df_full)
+        df_full[inv_col] = pd.to_numeric(df_full[inv_col], errors="coerce").fillna(0)
+    
+        # Normalize + strength extraction
+        strength_rx = build_strength_regex(valid_strengths)
+        df_full = df_full.copy()
+        df_full["NormName"] = df_full["SKU Name"].map(normalize_name)
+        df_full["Strength"] = df_full["SKU Name"].map(lambda x: extract_strength(x, strength_rx)).str.lower()
+    
+        scorer = fuzz.token_sort_ratio if match_scorer == "token_sort_ratio" else fuzz.WRatio
+        corpus = df_full["NormName"].tolist()
+    
+        matched_chunks, unmatched_products, no_strength_rows = [], [], []
+    
+        for prod in df_subset["SKU Name"].astype(str):
+            norm = normalize_name(prod)
+            if not norm:
+                unmatched_products.append(prod); continue
+    
+            match = process.extractOne(norm, corpus, scorer=scorer)
+            if not match:
+                unmatched_products.append(prod); continue
+    
+            best_norm, score, idx = match
+            if score < score_threshold:
+                unmatched_products.append(prod); continue
+    
+            block = df_full[df_full["NormName"] == best_norm].copy()
+            block["Matched Product"] = prod
+            block["Matched To (Norm)"] = best_norm
+            block["Match Score"] = score
+    
+            mask_valid_strength = block["Strength"].isin([s.lower() for s in valid_strengths])
+            no_strength = block[~mask_valid_strength | block["Strength"].isna()].copy()
+            if len(no_strength):
+                no_strength_rows.append(no_strength.assign(Note="Filtered (no/invalid strength)"))
+    
+            block = block.loc[mask_valid_strength]
+            if len(block):
+                matched_chunks.append(block)
+    
+        if matched_chunks:
+            matched_df = pd.concat(matched_chunks, ignore_index=True)
+            cats = [s.lower() for s in valid_strengths]
+            matched_df["Strength"] = pd.Categorical(matched_df["Strength"], categories=cats, ordered=True)
+    
+            subset_order = pd.Series(df_subset["SKU Name"].astype(str)).drop_duplicates().tolist()
+            pivot_df = (
+                matched_df
+                .pivot_table(
+                    index="Matched Product",
+                    columns="Strength",
+                    values=inv_col,
+                    aggfunc="sum",
+                    fill_value=0,
                 )
-            else:
-                final_df = pd.DataFrame()
-                pivot_df = pd.DataFrame()
-    
-            return final_df, pivot_df
-    
-        if file_full and file_subset:
-            df_full = read_file(file_full)
-            df_subset = read_file(file_subset)
-    
-            if "SKU Name" not in df_full.columns or "SKU Name" not in df_subset.columns:
-                st.error("Both files must have a 'SKU Name' column.")
-                return
-    
-            matched_df, pivot_df = match_and_gather_variants(df_full, df_subset)
+                .reindex(subset_order)
+                .reset_index()
+            )
     
             st.subheader("🧾 Matched Inventory (Detailed)")
-            st.dataframe(matched_df)
+            cols_show = ["Matched Product","Match Score","Matched To (Norm)","SKU Name","Strength",inv_col]
+            st.dataframe(
+                matched_df[cols_show + [c for c in matched_df.columns if c not in cols_show + ["NormName"]]],
+                use_container_width=True
+            )
     
             st.subheader("📊 Strength-wise Pivot Table")
-            st.dataframe(pivot_df)
+            st.dataframe(pivot_df, use_container_width=True)
+        else:
+            matched_df, pivot_df = pd.DataFrame(), pd.DataFrame()
+            st.info("No matches found with current settings. Try lowering the threshold or adjusting strengths.")
     
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                matched_df.to_excel(writer, index=False, sheet_name="Matched_Inventory")
-                pivot_df.to_excel(writer, index=False, sheet_name="Pivot_Summary")
-            st.download_button("📥 Download Excel", data=output.getvalue(), file_name="matched_inventory.xlsx")
+        if unmatched_products:
+            st.subheader("❓ Unmatched Products")
+            st.dataframe(pd.DataFrame({"SKU Name (subset)": unmatched_products}), use_container_width=True)
+    
+        if no_strength_rows:
+            st.subheader("⚠️ Rows filtered out (no/invalid strength)")
+            st.dataframe(pd.concat(no_strength_rows, ignore_index=True), use_container_width=True)
+    
+        # ---- Download Excel ----
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            (matched_df if not matched_df.empty else pd.DataFrame({"note":["no matches"]})).to_excel(
+                writer, index=False, sheet_name="Matched_Inventory")
+            (pivot_df if not pivot_df.empty else pd.DataFrame({"note":["no pivot"]})).to_excel(
+                writer, index=False, sheet_name="Pivot_Summary")
+            if unmatched_products:
+                pd.DataFrame({"Unmatched Products": unmatched_products}).to_excel(
+                    writer, index=False, sheet_name="Unmatched_Subset")
+        output.seek(0)
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        st.download_button(
+            "📥 Download Excel",
+            data=output.getvalue(),
+            file_name=f"matched_inventory_{ts}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
     
     # --- app 3 ---
     def runout_forecaster():
@@ -822,6 +962,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
