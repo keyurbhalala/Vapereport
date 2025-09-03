@@ -254,7 +254,7 @@ else:
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             pivot_df.to_excel(writer, index=False, sheet_name="Pivot_Summary")
         output.seek(0)
-        ts = dt.now().strftime("%Y-%m-%d_%H-%M-%S")
+        ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         st.download_button(
             "📥 Download Pivot (Excel)",
             data=output.getvalue(),
@@ -884,6 +884,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
