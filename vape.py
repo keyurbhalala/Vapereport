@@ -816,7 +816,7 @@ else:
                     "Limit suggestions to these destination outlets (To Outlet)",
                     options=all_outlets,
                     help="Leave empty to allow suggestions for all stores",
-                    key=k("to_outlets")
+                    key="to_outlets"
                 )
                 st.markdown("Filters are **ANDed** together.")
         
@@ -884,6 +884,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
