@@ -130,7 +130,7 @@ else:
         SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
         # Fixed matching settings (no UI)
-        VALID_STRENGTHS = ["20mg", "40mg", "50mg"]
+        VALID_STRENGTHS = ["20","40","50","15","30","3","6","12","5","10"]
         SCORE_THRESHOLD = 85
         SCORER = fuzz.token_sort_ratio
     
@@ -884,6 +884,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
