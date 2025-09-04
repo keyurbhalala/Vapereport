@@ -126,10 +126,8 @@ else:
 
     def inventory_matcher():
     # ======== FIXED DATA SOURCES (edit if needed) ========
-        INVENTORY_CSV_URL = (
-            "https://docs.google.com/spreadsheets/d/1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export"
-            "?format=csv&gid=1833175069"   # Sheet1 gid (change if needed)
-        )
+        INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/1xODr-YC8j_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv&gid=1833175069"  # Sheet1 gid (change if needed)
+    
         SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
         # ======== FIXED MATCH SETTINGS (MG ONLY) ========
@@ -162,11 +160,22 @@ else:
     
         @st.cache_data(show_spinner=False)
         def load_inventory_csv(url: str) -> pd.DataFrame:
-            r = requests.get(url, timeout=30)
-            r.raise_for_status()
-            df = pd.read_csv(BytesIO(r.content), dtype=str)
-            df.columns = [c.strip() for c in df.columns]
-            return df
+            import requests
+            from io import BytesIO
+            r = requests.get(url, timeout=30, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code != 200:
+                st.error(
+                    "Inventory fetch failed.\n"
+                    f"HTTP {r.status_code}\nURL: {url}\nPreview: {r.text[:200]}"
+                )
+                return pd.DataFrame()
+            try:
+                df = pd.read_csv(BytesIO(r.content), dtype=str)
+                df.columns = [c.strip() for c in df.columns]
+                return df
+            except Exception as e:
+                st.error(f"CSV parse failed: {e}\nFirst 200 bytes: {r.content[:200]}")
+                return pd.DataFrame()
     
         @st.cache_data(show_spinner=False)
         def load_shortlist(url: str) -> pd.DataFrame:
@@ -902,6 +911,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
