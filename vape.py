@@ -126,7 +126,11 @@ else:
 
     def inventory_matcher():
     # ======== FIXED DATA SOURCES (edit if needed) ========
-        INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"  # Sheet1 gid (change if needed)
+        col_refresh = st.empty()
+        if col_refresh.button("↻ Refresh data"):
+            st.cache_data.clear()
+            st.rerun()
+                INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"  # Sheet1 gid (change if needed)
     
         SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
@@ -911,6 +915,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
