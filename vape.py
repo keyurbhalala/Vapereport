@@ -142,7 +142,7 @@ else:
             return s
     
         def build_strength_regex(valid_strengths_list):
-            nums = [re.escape(s.replace("mg","").lower()) for s in valid_strengths_list] or ["20","40","50"]
+            nums = [re.escape(s.replace("mg","").lower()) for s in valid_strengths_list] or ["20","40","50","15","30","3","6","12","5","10"]
             return re.compile(rf"\b({'|'.join(nums)})\s?mg\b", flags=re.IGNORECASE)
     
         def extract_strength(name, compiled_rx):
@@ -884,6 +884,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
