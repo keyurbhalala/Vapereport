@@ -125,37 +125,42 @@ else:
     # --- App 2 ---
 
     def inventory_matcher():
-        # ======== FIXED CONFIG (edit these two URLs) ========
-        INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"
+    # ======== FIXED DATA SOURCES (edit if needed) ========
+        INVENTORY_FILE_LINK = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"
         SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
-        # Fixed matching settings (no UI)
-        VALID_STRENGTHS = ["20","40","50","15","30","3","6","12","5","10"]
+        # ======== FIXED MATCH SETTINGS (MG ONLY) ========
+        VALID_STRENGTHS_NUM = [20,40,50,15,30,3,6,12,5,10]   # your list (order preserved)
         SCORE_THRESHOLD = 85
         SCORER = fuzz.token_sort_ratio
     
-        # ======== HELPERS ========
+        # ---------- Helpers ----------
         def normalize_name(name: str) -> str:
             s = str(name).lower()
-            s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)   # drop “20mg”, “20 mg”, etc.
+            # strip ANY mg token (so “same product” across strengths matches)
+            s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)
             s = re.sub(r"[^a-z0-9]+", " ", s).strip()
             return s
     
-        def build_strength_regex(valid_strengths_list):
-            nums = [re.escape(s.replace("mg","").lower()) for s in valid_strengths_list] or ["20","40","50","15","30","3","6","12","5","10"]
-            return re.compile(rf"\b({'|'.join(nums)})\s?mg\b", flags=re.IGNORECASE)
+        def build_strength_tools(nums):
+            """Return (extract_strength_fn, category_labels_in_mg). MG ONLY."""
+            nums = [int(x) for x in nums]
+            mg_rx = re.compile(rf"\b({'|'.join(map(str, nums))})\s?mg\b", re.IGNORECASE)
     
-        def extract_strength(name, compiled_rx):
-            m = compiled_rx.search(str(name))
-            return f"{m.group(1)}mg".lower() if m else None
+            def extract_strength(name: str):
+                s = str(name).lower()
+                m = mg_rx.search(s)
+                if m:
+                    return f"{int(m.group(1))}mg"
+                return None
+    
+            cats = [f"{n}mg" for n in nums]  # preserve user order
+            return extract_strength, cats
     
         @st.cache_data(show_spinner=False)
         def load_inventory_csv(url: str) -> pd.DataFrame:
             r = requests.get(url, timeout=30)
-            if r.status_code != 200:
-                st.error(f"Inventory fetch failed (HTTP {r.status_code}). "
-                         f"Ensure URL uses /export?format=csv and the sheet is shared correctly.")
-                return pd.DataFrame()
+            r.raise_for_status()
             df = pd.read_csv(BytesIO(r.content), dtype=str)
             df.columns = [c.strip() for c in df.columns]
             return df
@@ -171,7 +176,7 @@ else:
             return df
     
         def pick_inventory_column(df):
-            # prefer common names; else first numeric column
+            # prefer common names; else first numeric column; else first column
             candidates = [
                 "Closing Inventory","Avail. Stock","Available Stock",
                 "Stock On Hand","On Hand","Stock","Quantity","Qty"
@@ -182,56 +187,62 @@ else:
                 present = numish or df.columns.tolist()
             return present[0]
     
-        # ======== LOAD DATA ========
+        # ======== Load data ========
         df_full = load_inventory_csv(INVENTORY_CSV_URL)
         df_subset = load_shortlist(SHORTLIST_URL)
-    
         if df_full.empty or df_subset.empty:
+            st.error("Couldn’t load inventory or shortlist.")
             return
         if "SKU Name" not in df_full.columns or "SKU Name" not in df_subset.columns:
-            st.error("Both sources must include a 'SKU Name' column.")
+            st.error("Both sources need a 'SKU Name' column.")
             return
     
         inv_col = pick_inventory_column(df_full)
         df_full[inv_col] = pd.to_numeric(df_full[inv_col], errors="coerce").fillna(0)
     
-        # ======== PREPARE ========
-        strength_rx = build_strength_regex(VALID_STRENGTHS)
+        extract_strength, CATS_MG = build_strength_tools(VALID_STRENGTHS_NUM)
+    
+        # prepare normalized names & strengths
         df_full = df_full.copy()
         df_full["NormName"] = df_full["SKU Name"].map(normalize_name)
-        df_full["Strength"] = df_full["SKU Name"].map(lambda x: extract_strength(x, strength_rx)).str.lower()
+        df_full["Strength"] = df_full["SKU Name"].map(extract_strength).str.lower()
     
         corpus = df_full["NormName"].tolist()
     
-        # ======== MATCH (minimal, no UI) ========
+        # ======== Matching (minimal) ========
         matched_chunks = []
         for prod in df_subset["SKU Name"].astype(str):
             norm = normalize_name(prod)
             if not norm:
                 continue
-            match = process.extractOne(norm, corpus, scorer=SCORER)
-            if not match:
+            hit = process.extractOne(norm, corpus, scorer=SCORER)
+            if not hit:
                 continue
-            best_norm, score, idx = match
+            best_norm, score, _ = hit
             if score < SCORE_THRESHOLD:
                 continue
+    
             block = df_full[df_full["NormName"] == best_norm].copy()
             block["Matched Product"] = prod
-            # keep only desired strengths
-            mask_valid = block["Strength"].isin([s.lower() for s in VALID_STRENGTHS])
-            block = block.loc[mask_valid]
+    
+            # keep only desired strengths (mg only)
+            mask = block["Strength"].isin([c.lower() for c in CATS_MG])
+            block = block.loc[mask]
             if not block.empty:
                 matched_chunks.append(block)
     
         if not matched_chunks:
-            st.info("No matches found with current fixed settings.")
+            st.info("No matches with current fixed settings.")
             return
     
         matched_df = pd.concat(matched_chunks, ignore_index=True)
-        cats = [s.lower() for s in VALID_STRENGTHS]
-        matched_df["Strength"] = pd.Categorical(matched_df["Strength"], categories=cats, ordered=True)
+        matched_df["Strength"] = pd.Categorical(
+            matched_df["Strength"],
+            categories=[c.lower() for c in CATS_MG],
+            ordered=True
+        )
     
-        # Preserve shortlist order in pivot
+        # keep shortlist order in pivot
         subset_order = pd.Series(df_subset["SKU Name"].astype(str)).drop_duplicates().tolist()
         pivot_df = (
             matched_df
@@ -246,7 +257,11 @@ else:
             .reset_index()
         )
     
-        # ======== SHOW ONLY PIVOT + DOWNLOAD ========
+        # make pivot columns pretty/canonical (exact "XXmg" from your list)
+        rename_map = {c.lower(): c for c in CATS_MG}
+        pivot_df.rename(columns=rename_map, inplace=True)
+    
+        # ======== Show pivot + download only ========
         st.subheader("📊 Strength-wise Pivot Table")
         st.dataframe(pivot_df, use_container_width=True)
     
@@ -254,7 +269,7 @@ else:
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             pivot_df.to_excel(writer, index=False, sheet_name="Pivot_Summary")
         output.seek(0)
-        ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        ts = dt.now().strftime("%Y-%m-%d_%H-%M-%S")
         st.download_button(
             "📥 Download Pivot (Excel)",
             data=output.getvalue(),
@@ -884,6 +899,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
