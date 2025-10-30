@@ -125,24 +125,23 @@ else:
     # --- App 2 ---
 
     def inventory_matcher():
-        # ======== FIXED DATA SOURCES (edit if needed) ========
+    # ======== FIXED DATA SOURCES (edit if needed) ========
         col_refresh = st.empty()
         if col_refresh.button("↻ Refresh data"):
             st.cache_data.clear()
             st.rerun()
+        INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"  # Sheet1 gid (change if needed)
     
-        INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/1xODr-YC8ej_5HNmoR7f9qTO7mnMOFAAwO6Kf-voBpY8/export?format=csv"
         SHORTLIST_URL = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/shortlisted_products.xlsx"
     
         # ======== FIXED MATCH SETTINGS (MG ONLY) ========
-        VALID_STRENGTHS_NUM = [20, 40, 50, 15, 30, 3, 6, 12, 5, 10, 0, 9, 18]  # order preserved
+        VALID_STRENGTHS_NUM = [20,40,50,15,30,3,6,12,5,10,0,9,18]   # your list (order preserved)
         SCORE_THRESHOLD = 85
         SCORER = fuzz.token_sort_ratio
     
         # ---------- Helpers ----------
         def normalize_name(name: str) -> str:
-            s = str(name) if pd.notna(name) else ""
-            s = s.lower()
+            s = str(name).lower()
             # strip ANY mg token (so “same product” across strengths matches)
             s = re.sub(r"\b(\d{1,3})\s?mg\b", "", s)
             s = re.sub(r"[^a-z0-9]+", " ", s).strip()
@@ -166,17 +165,8 @@ else:
         @st.cache_data(show_spinner=False)
         def load_inventory_csv(url: str) -> pd.DataFrame:
             import requests
-            from io import BytesIO as _BytesIO
-    
-            try:
-                r = requests.get(
-                    url, timeout=30, allow_redirects=True,
-                    headers={"User-Agent": "Mozilla/5.0"}
-                )
-            except Exception as e:
-                st.error(f"Inventory fetch failed: {e}")
-                return pd.DataFrame()
-    
+            from io import BytesIO
+            r = requests.get(url, timeout=30, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
             if r.status_code != 200:
                 st.error(
                     "Inventory fetch failed.\n"
@@ -184,7 +174,7 @@ else:
                 )
                 return pd.DataFrame()
             try:
-                df = pd.read_csv(_BytesIO(r.content), dtype=str)
+                df = pd.read_csv(BytesIO(r.content), dtype=str)
                 df.columns = [c.strip() for c in df.columns]
                 return df
             except Exception as e:
@@ -194,22 +184,18 @@ else:
         @st.cache_data(show_spinner=False)
         def load_shortlist(url: str) -> pd.DataFrame:
             u = url.lower().strip()
-            try:
-                if u.endswith(".csv"):
-                    df = pd.read_csv(url, dtype=str)
-                else:
-                    df = pd.read_excel(url, dtype=str)
-            except Exception as e:
-                st.error(f"Shortlist load failed: {e}")
-                return pd.DataFrame()
+            if u.endswith(".csv"):
+                df = pd.read_csv(url, dtype=str)
+            else:
+                df = pd.read_excel(url, dtype=str)
             df.columns = [c.strip() for c in df.columns]
             return df
     
         def pick_inventory_column(df):
             # prefer common names; else first numeric column; else first column
             candidates = [
-                "Closing Inventory", "Avail. Stock", "Available Stock",
-                "Stock On Hand", "On Hand", "Stock", "Quantity", "Qty"
+                "Closing Inventory","Avail. Stock","Available Stock",
+                "Stock On Hand","On Hand","Stock","Quantity","Qty"
             ]
             present = [c for c in candidates if c in df.columns]
             if not present:
@@ -235,9 +221,7 @@ else:
         # prepare normalized names & strengths
         df_full = df_full.copy()
         df_full["NormName"] = df_full["SKU Name"].map(normalize_name)
-        df_full["Strength"] = df_full["SKU Name"].map(extract_strength)
-        df_full["Strength"] = df_full["Strength"].astype("string").str.lower()
-        df_full = df_full[df_full["NormName"].astype(bool)]
+        df_full["Strength"] = df_full["SKU Name"].map(extract_strength).str.lower()
     
         corpus = df_full["NormName"].tolist()
     
@@ -293,129 +277,19 @@ else:
         rename_map = {c.lower(): c for c in CATS_MG}
         pivot_df.rename(columns=rename_map, inplace=True)
     
-        # ======== EXACT layout (like your screenshots) ========
-        st.subheader("📊 Inventory by Strength — Exact Grouped Layout")
+        # ======== Show pivot + download only ========
+        st.subheader("📊 Strength-wise Pivot Table")
+        st.dataframe(pivot_df, use_container_width=True)
     
-        # Each block = (title, [strength columns], include_keywords, exclude_keywords)
-        # include/exclude are case-insensitive substrings on product name.
-        BLOCKS = [
-            ("20mg / 40mg / 50mg",         ["20mg", "40mg", "50mg"], [], []),
-            ("15mg / 30mg / 50mg",         ["15mg", "30mg", "50mg"], ["nicsalt"], []),
-            ("3mg / 6mg",                  ["3mg", "6mg"],           [" ev ", "ev ", "lawless"], []),
-            ("5mg / 10mg",                 ["5mg", "10mg"],          ["subohm"], []),
-            ("30mg / 50mg",                ["30mg", "50mg"],         ["hollywood"], []),
-            ("3mg / 6mg / 12mg (HLW)",     ["3mg", "6mg", "12mg"],   ["hlw"], []),
-            ("3mg / 6mg / 12mg (Elate)",   ["3mg", "6mg", "12mg"],   ["elate"], []),
-            ("0mg / 3mg / 6mg (Shosha)",   ["0mg", "3mg", "6mg"],    ["shosha"], []),
-            ("9mg / 12mg / 18mg (Shosha)", ["9mg", "12mg", "18mg"],  ["shosha"], []),
-        ]
-    
-        # display options
-        SHOW_ZERO_AS_BLANK = True  # as in your sheet
-        ADD_SPACER_COL = True      # blank column between name and numbers
-    
-        # -------- helpers for the layout --------
-        def _normalize(s: str) -> str:
-            return str(s).lower() if pd.notna(s) else ""
-    
-        def _passes_name_filters(name, include_keywords, exclude_keywords):
-            n = _normalize(name)
-            if include_keywords and not any(k in n for k in include_keywords):
-                return False
-            if exclude_keywords and any(k in n for k in exclude_keywords):
-                return False
-            return True
-    
-        def _blank_zeros(df, cols):
-            if not SHOW_ZERO_AS_BLANK:
-                return df
-            df = df.copy()
-            for c in cols:
-                if c in df.columns:
-                    df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-                    df[c] = df[c].apply(
-                        lambda x: "" if float(x) == 0 else (int(x) if float(x).is_integer() else x)
-                    )
-            return df
-    
-        def _render_block(title, cols, pool_df):
-            # keep only configured strength columns that exist
-            cols = [c for c in cols if c in pool_df.columns]
-            if not cols:
-                return pd.DataFrame(), pd.DataFrame()
-    
-            # choose rows with any non-zero in these columns
-            sub = pool_df[["Matched Product"] + cols].copy()
-            numeric_part = sub[cols].apply(pd.to_numeric, errors="coerce").fillna(0)
-            any_nonzero = (numeric_part.sum(axis=1) > 0)
-    
-            show = sub[any_nonzero].copy()
-            show = _blank_zeros(show, cols)
-    
-            # optional spacer column like your sheet
-            if ADD_SPACER_COL:
-                show.insert(1, "", "")
-    
-            st.markdown(f"### {title}")
-            st.dataframe(show.reset_index(drop=True), use_container_width=True)
-            st.markdown("")
-    
-            # for Excel (without spacer, numbers preserved)
-            excel_df = sub[any_nonzero].copy().reset_index(drop=True)
-            return show, excel_df
-    
-        # -------- main blocking logic (exclusive assignment) --------
-        # Work on a pool, and drop rows once they are placed in a block.
-        pool = pivot_df.copy()
-        already_used = set()
-    
-        excel_sheets = {}
-        ordered_results_for_excel = []  # keep order
-    
-        for title, cols, inc_keys, exc_keys in BLOCKS:
-            # filter pool down to name matches (include/exclude)
-            _mask_name = pool["Matched Product"].apply(
-                lambda n: _passes_name_filters(n, inc_keys, exc_keys)
-            )
-            block_pool = pool[_mask_name & ~pool["Matched Product"].isin(already_used)]
-            if block_pool.empty:
-                continue
-    
-            shown_df, excel_df = _render_block(title, cols, block_pool)
-            if not excel_df.empty:
-                # remember which names were used so they don't appear in later blocks
-                already_used.update(excel_df["Matched Product"].tolist())
-                excel_sheets[title] = excel_df
-                ordered_results_for_excel.append(title)
-    
-        # Fallback
-        if not ordered_results_for_excel:
-            st.info("No products matched the configured blocks.")
-            st.dataframe(pivot_df, use_container_width=True)
-            excel_sheets = {"Full_Pivot": pivot_df}
-            ordered_results_for_excel = list(excel_sheets.keys())
-    
-        # -------- Excel export (one sheet per block in the shown order) --------
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            for t in ordered_results_for_excel:
-                # Excel sheet name limit is 31
-                excel_sheets[t].to_excel(writer, index=False, sheet_name=(t[:31] or "Sheet"))
-            # Details sheet (for auditing)
-            cols_for_details = ["Matched Product", "SKU Name", "Strength", inv_col]
-            details_df = matched_df.copy()
-            pick_cols = [c for c in cols_for_details if c in details_df.columns]
-            for extra in ["SKU", "SKU Code", "Barcode", "Brand", "Supplier", "Variant"]:
-                if extra in details_df.columns and extra not in pick_cols:
-                    pick_cols.append(extra)
-            details_df[pick_cols].to_excel(writer, index=False, sheet_name="Details")
-    
+            pivot_df.to_excel(writer, index=False, sheet_name="Pivot_Summary")
         output.seek(0)
         ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         st.download_button(
-            "📥 Download (Excel • Exact layout)",
+            "📥 Download Pivot (Excel)",
             data=output.getvalue(),
-            file_name=f"inventory_exact_layout_{ts}.xlsx",
+            file_name=f"matched_inventory_pivot_{ts}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
     
@@ -1041,6 +915,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
