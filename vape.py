@@ -300,7 +300,7 @@ else:
         # 🔴 CHANGE THIS to the actual full path of your capacity CSV file.
         # Example:
         # CAPACITY_FILE = r"C:\Users\keyur\OneDrive\Desktop\StockAPP\Forcast\dist\Ordaring\location_capacity.csv"
-        CAPACITY_FILE = r"C:\Users\keyur\OneDrive\Desktop\StockAPP\Forcast\dist\Ordaring\location_capacity.csv"
+        CAPACITY_FILE = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/location_capacity.csv"
         
         SOFT_CAP_EXTRA = 50  # Fixed can go up to capacity + 50
         
@@ -1210,6 +1210,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
