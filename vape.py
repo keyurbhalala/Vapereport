@@ -297,14 +297,10 @@ else:
         # ==========================
         # CONFIG
         # ==========================
-        # 🔴 CHANGE THIS to the actual full path of your capacity CSV file.
-        # Example:
-        # CAPACITY_FILE = r"C:\Users\keyur\OneDrive\Desktop\StockAPP\Forcast\dist\Ordaring\location_capacity.csv"
+        # Using raw GitHub CSV for capacity
         CAPACITY_FILE = "https://raw.githubusercontent.com/keyurbhalala/Vapereport/main/location_capacity.csv"
-        
         SOFT_CAP_EXTRA = 50  # Fixed can go up to capacity + 50
-        
-        
+    
         # ==========================
         # HELPERS
         # ==========================
@@ -319,17 +315,16 @@ else:
                 raise ValueError(
                     f"CAPACITY_FILE points to a folder, not a CSV file:\n{capacity_file}"
                 )
-        
+    
             cap_df = pd.read_csv(capacity_file)
             if "Location" not in cap_df.columns or "MaxCapacity" not in cap_df.columns:
                 raise ValueError(
                     "Capacity file must have columns: 'Location' and 'MaxCapacity'."
                 )
-        
+    
             cap_df["Location"] = cap_df["Location"].astype(str).str.strip()
             return dict(zip(cap_df["Location"], cap_df["MaxCapacity"]))
-        
-        
+    
         def generate_replenishment_plan(
             df_wms: pd.DataFrame,
             location_capacity: dict,
@@ -337,7 +332,7 @@ else:
         ) -> pd.DataFrame:
             """
             Generate a FEFO-based replenishment plan:
-        
+    
             - Each Reserve row = 1 full box, box size = that row's SOH
             - Uses Fixed and Reserve zones only
             - Respects capacity + soft_cap_extra (soft cap)
@@ -350,103 +345,98 @@ else:
                 * Within same expiry, smaller box size is used first.
             """
             df = df_wms.copy()
-        
+    
             # Check required columns
             required_cols = ["Product", "Description", "SOH", "Location",
                              "Zone", "Expiry Date"]
             missing = [c for c in required_cols if c not in df.columns]
             if missing:
                 raise ValueError(f"WMS file is missing required columns: {missing}")
-        
+    
             # Parse expiry
             df["Expiry_dt"] = pd.to_datetime(
                 df["Expiry Date"], dayfirst=True, errors="coerce"
             )
-        
+    
             # Only Fixed + Reserve
             df = df[df["Zone"].isin(["Fixed", "Reserve"])].copy()
             df["Location"] = df["Location"].astype(str).str.strip()
-        
+    
             plan_rows = []
-        
+    
             # Work per product
             for product, prod_df in df.groupby("Product"):
                 description = prod_df["Description"].iloc[0]
-        
+    
                 fixed_rows = prod_df[prod_df["Zone"] == "Fixed"].copy()
                 reserve_rows = prod_df[prod_df["Zone"] == "Reserve"].copy()
-        
+    
                 # No reserve = nothing to do
                 if reserve_rows["SOH"].sum() <= 0:
                     continue
-        
+    
                 # Fixed stock per location
                 fixed_by_loc = fixed_rows.groupby("Location", as_index=False)["SOH"].sum()
                 if fixed_by_loc.empty:
                     continue
-        
-                # For safety, sort reserve by expiry then box size then location
+    
+                # Sort reserve by expiry then box size then location
                 reserve_rows = reserve_rows.sort_values(
                     ["Expiry_dt", "SOH", "Location"]
-                )
-        
-                # We'll mutate this table, so reset index
-                reserve_rows = reserve_rows.reset_index(drop=True)
-        
+                ).reset_index(drop=True)
+    
                 # For each fixed location
                 for _, fixed_info in fixed_by_loc.iterrows():
                     fixed_location = str(fixed_info["Location"]).strip()
                     fixed_soh = int(fixed_info["SOH"])
-        
+    
                     cap = location_capacity.get(fixed_location)
                     if cap is None or cap <= 0:
                         continue
-        
+    
                     allowed_max = cap + soft_cap_extra
                     remaining_space = allowed_max - fixed_soh
                     if remaining_space <= 0:
                         continue
-        
+    
                     # Strict FEFO by expiry groups
-                    # We'll look at distinct expiry dates in ascending order
                     expiry_dates = (
                         reserve_rows["Expiry_dt"]
                         .dropna()
                         .sort_values()
                         .unique()
                     )
-        
+    
                     for exp in expiry_dates:
                         if remaining_space <= 0:
                             break
-        
+    
                         # Rows for this expiry date
                         mask = reserve_rows["Expiry_dt"] == exp
                         same_exp = reserve_rows[mask].copy()
-        
                         if same_exp.empty:
                             continue
-        
+    
                         # Sort within same expiry by smaller box first
                         same_exp = same_exp.sort_values(["SOH", "Location"])
-        
+    
                         moved_any_this_expiry = False
-        
+    
                         for idx in same_exp.index:
                             if remaining_space <= 0:
                                 break
-        
+    
                             row = reserve_rows.loc[idx]
                             box_size = int(row["SOH"])
-        
-                            # Box already used in another move?
+    
+                            # Box already used / invalid
                             if box_size <= 0:
                                 continue
-        
-                            # Only move if it fits within remaining space
+    
+                            # Only move if it fits
                             if box_size > remaining_space:
                                 continue
-        
+    
                             # Record the move
                             plan_rows.append({
                                 "Product": product,
@@ -463,18 +453,18 @@ else:
                                 "Fixed_Capacity": cap,
                                 "Fixed_Soft_Max": allowed_max,
                             })
-        
+    
                             # Update state
                             fixed_soh += box_size
                             remaining_space -= box_size
                             reserve_rows.at[idx, "SOH"] = 0  # box moved
                             moved_any_this_expiry = True
-        
+    
                         # If we could not move ANY box from this earliest remaining expiry,
-                        # then we STOP for this product+location (no newer expiry allowed).
+                        # then STOP for this product+location (no newer expiry allowed).
                         if not moved_any_this_expiry:
                             break
-        
+    
             plan_df = pd.DataFrame(plan_rows)
             if not plan_df.empty:
                 plan_df.sort_values(
@@ -482,110 +472,119 @@ else:
                     inplace=True,
                 )
             return plan_df
-        
-        
+    
         def to_excel_bytes(df: pd.DataFrame) -> bytes:
             """Convert DataFrame to Excel bytes for download."""
             output = BytesIO()
             with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
                 df.to_excel(writer, index=False, sheet_name="Replenishment")
             return output.getvalue()
-        
-        
+    
         # ==========================
-        # STREAMLIT UI
+        # STREAMLIT UI (TAB CONTENT)
         # ==========================
-        def main():
-            st.title("FEFO Replenishment Planner (Fixed ↔ Reserve)")
-        
-        
-            # Load capacity file
-            try:
-                location_capacity = load_location_capacity(CAPACITY_FILE)
-                st.success(f"Capacity file loaded from: `{CAPACITY_FILE}`")
-            except Exception as e:
-                st.error(
-                    f"Error loading capacity file from:\n`{CAPACITY_FILE}`\n\n{e}"
-                )
-                st.stop()
-        
-            # File uploader for WMS export
-            uploaded_file = st.file_uploader(
-                "Upload WMS export CSV (e.g. Elq.csv)",
-                type=["csv"]
+    
+        # Session state for plan so it survives button clicks (reruns)
+        if "e_liquid_plan_df" not in st.session_state:
+            st.session_state["e_liquid_plan_df"] = None
+    
+        st.subheader("FEFO Replenishment Planner (Fixed ↔ Reserve)")
+    
+        # Load capacity file
+        try:
+            location_capacity = load_location_capacity(CAPACITY_FILE)
+            st.success(f"Capacity file loaded from: `{CAPACITY_FILE}`")
+        except Exception as e:
+            st.error(
+                f"Error loading capacity file from:\n`{CAPACITY_FILE}`\n\n{e}"
             )
-        
-            if uploaded_file is not None:
-                # Read WMS CSV
-                try:
-                    df_wms = pd.read_csv(uploaded_file)
-                except Exception as e:
-                    st.error(f"Could not read the uploaded CSV file: {e}")
-                    st.stop()
-        
-                st.write("### Preview of uploaded WMS file")
-                st.dataframe(df_wms.head(20), use_container_width=True)
-        
-                if st.button("Generate Replenishment Plan"):
-                    with st.spinner("Calculating replenishment plan..."):
-                        try:
-                            plan_df = generate_replenishment_plan(
-                                df_wms,
-                                location_capacity,
-                                soft_cap_extra=SOFT_CAP_EXTRA,
-                            )
-                        except Exception as e:
-                            st.error(f"Error while generating plan: {e}")
-                            st.stop()
-        
-                    if plan_df.empty:
-                        st.warning("No replenishment needed based on current rules and data.")
+            return
+    
+        # File uploader for WMS export
+        uploaded_file = st.file_uploader(
+            "Upload WMS export CSV (e.g. Elq.csv)",
+            type=["csv"],
+            key="e_liquid_wms_upload",
+        )
+    
+        # --- Generate plan ---
+        if uploaded_file is not None:
+            try:
+                df_wms = pd.read_csv(uploaded_file)
+            except Exception as e:
+                st.error(f"Could not read the uploaded CSV file: {e}")
+                return
+    
+            st.write("### Preview of uploaded WMS file")
+            st.dataframe(df_wms.head(20), use_container_width=True)
+    
+            if st.button("Generate Replenishment Plan", key="e_liquid_generate"):
+                with st.spinner("Calculating replenishment plan..."):
+                    try:
+                        plan_df = generate_replenishment_plan(
+                            df_wms,
+                            location_capacity,
+                            soft_cap_extra=SOFT_CAP_EXTRA,
+                        )
+                    except Exception as e:
+                        st.error(f"Error while generating plan: {e}")
+                        st.session_state["e_liquid_plan_df"] = None
                     else:
-                        st.success(
-                            f"Replenishment plan generated with {len(plan_df)} move lines."
-                        )
-        
-                        st.write("### Replenishment Plan (FEFO, Full Boxes Only)")
-                        st.dataframe(plan_df, use_container_width=True)
-        
-                        # Download buttons
-                        csv_bytes = plan_df.to_csv(index=False).encode("utf-8")
-                        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-                        st.download_button(
-                            label="📥 Download as CSV",
-                            data=csv_bytes,
-                            file_name=f"replenishment_plan_{timestamp}.csv",
-                            mime="text/csv",
-                        )
-        
-                        excel_bytes = to_excel_bytes(plan_df)
-                        st.download_button(
-                            label="📥 Download as Excel",
-                            data=excel_bytes,
-                            file_name=f"replenishment_plan_{timestamp}.xlsx",
-                            mime=(
-                                "application/vnd.openxmlformats-officedocument."
-                                "spreadsheetml.sheet"
-                            ),
-                        )
-        
-                        # Print button: triggers browser print dialog
-                        if st.button("🖨️ Print Plan"):
-                            st.markdown(
-                                """
-                                <script>
-                                window.print();
-                                </script>
-                                """,
-                                unsafe_allow_html=True,
+                        if plan_df.empty:
+                            st.warning("No replenishment needed based on current rules and data.")
+                            st.session_state["e_liquid_plan_df"] = None
+                        else:
+                            st.success(
+                                f"Replenishment plan generated with {len(plan_df)} move lines."
                             )
-            else:
-                st.info("Upload your WMS export CSV to generate a replenishment plan.")
-        
-        
-        if __name__ == "__main__":
-            main()
+                            st.session_state["e_liquid_plan_df"] = plan_df
+        else:
+            st.info("Upload your WMS export CSV to generate a replenishment plan.")
+    
+        # --- Display existing plan from session_state (for print / downloads) ---
+        plan_df = st.session_state.get("e_liquid_plan_df")
+    
+        if plan_df is not None and not plan_df.empty:
+            # Drop capacity cols from export file if you don’t want them there
+            export_df = plan_df.drop(
+                columns=["Fixed_Capacity", "Fixed_Soft_Max"],
+                errors="ignore",
+            )
+    
+            st.write("### Replenishment Plan (FEFO, Full Boxes Only)")
+            st.dataframe(export_df, use_container_width=True)
+    
+            # Download buttons
+            timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+            csv_bytes = export_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Download as CSV",
+                data=csv_bytes,
+                file_name=f"replenishment_plan_{timestamp}.csv",
+                mime="text/csv",
+                key="e_liquid_download_csv",
+            )
+    
+            excel_bytes = to_excel_bytes(export_df)
+            st.download_button(
+                label="📥 Download as Excel",
+                data=excel_bytes,
+                file_name=f"replenishment_plan_{timestamp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="e_liquid_download_xlsx",
+            )
+    
+            # Print button: triggers browser print dialog
+            if st.button("🖨️ Print Plan", key="e_liquid_print"):
+                st.markdown(
+                    """
+                    <script>
+                    window.print();
+                    </script>
+                    """,
+                    unsafe_allow_html=True,
+                )
     # --- app 3 ---
     def runout_forecaster():
         st.set_page_config(page_title="🔮 Forecast Wizard", layout="wide", page_icon="📦")
@@ -1210,6 +1209,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
