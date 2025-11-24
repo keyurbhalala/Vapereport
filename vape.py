@@ -550,7 +550,7 @@ else:
         
                         # Download buttons
                         csv_bytes = plan_df.to_csv(index=False).encode("utf-8")
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         
                         st.download_button(
                             label="📥 Download as CSV",
@@ -1210,6 +1210,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
