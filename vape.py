@@ -3,7 +3,7 @@ import pandas as pd
 import re
 import os
 import numpy as np
-import datetime
+import datetime as dt
 import requests
 import tempfile
 import io
@@ -31,7 +31,7 @@ def log_login_attempt(username, status):
 
 
     # Log attempt
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sheet.append_row([timestamp, username, status])
 
 def login():
@@ -286,7 +286,7 @@ else:
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             pivot_df.to_excel(writer, index=False, sheet_name="Pivot_Summary")
         output.seek(0)
-        ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        ts = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         st.download_button(
             "📥 Download Pivot (Excel)",
             data=output.getvalue(),
@@ -646,7 +646,7 @@ else:
             # last_date from sales headers
             last_col_header = date_cols[-1]
             cleaned_date = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', last_col_header.strip())
-            last_date = datetime.datetime.strptime(cleaned_date, "%d %b %Y")
+            last_date = dt.datetime.strptime(cleaned_date, "%d %b %Y")
     
             # ======== Prepare INVENTORY (authoritative identity, base DF) ========
             def inv_get(name):
@@ -1210,6 +1210,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
