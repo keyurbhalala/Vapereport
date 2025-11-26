@@ -821,7 +821,7 @@ else:
                 lambda r: round(r["Warehouse Qnty"] / r[avg_col], 1) if r[avg_col] > 0 else np.nan, axis=1
             )
             merged["Estimated Run-Out Date"] = merged["Weeks Remaining"].apply(
-                lambda w: (last_date + dt.datetime.timedelta(weeks=w)).strftime("%Y-%m-%d") if pd.notna(w) else ""
+                lambda w: (last_date + dt.timedelta(weeks=w)).strftime("%Y-%m-%d") if pd.notna(w) else ""
             )
             merged["Status"] = merged["Warehouse Qnty"].apply(lambda x: "❌ Out of Stock" if x <= 0 else "✅ In Stock")
     
@@ -1209,6 +1209,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
