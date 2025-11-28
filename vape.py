@@ -598,6 +598,146 @@ else:
         MIN_WEEKS = 4            # smoothing minimum (kept for future use if needed)
         USE_ADJUSTED = True      # kept for clarity
     
+        import math  # for rounding to 300s (can also be imported at top of file)
+    
+        # ======== ORDERING + PIVOT HELPERS ========
+    
+        def round_to_300(qty: float) -> int:
+            """
+            Round quantity to box size of 300 with custom rules:
+            - < 250 → 0
+            - 250–450 → 300
+            - 451–750 → 600
+            - 751–1050 → 900
+            - etc.
+            """
+            if pd.isna(qty):
+                return 0
+    
+            if qty < 250:
+                return 0
+    
+            return int(math.ceil((qty - 150) / 300.0) * 300)
+    
+        def extract_base_and_strength(name: str):
+            """
+            From 'Product Name' extract:
+            - strength: e.g. '20mg', '40mg', '50mg'
+            - base name: product name with the strength text removed
+    
+            If no strength is found, strength = 'NA' and base = original.
+            """
+            if pd.isna(name):
+                return "", "NA"
+    
+            text = str(name)
+    
+            # Look for patterns like '20mg', '30 mg', etc.
+            m = re.search(r"(\d+\s*mg)", text, flags=re.IGNORECASE)
+            if not m:
+                # No strength found
+                return text.strip(), "NA"
+    
+            strength_raw = m.group(1)
+            strength = strength_raw.replace(" ", "").lower()  # normalise: "20 mg" -> "20mg"
+    
+            base = text.replace(strength_raw, "").strip()
+            base = re.sub(r"\s{2,}", " ", base)  # remove double spaces
+    
+            return base, strength
+    
+        def build_order_and_pivot(df: pd.DataFrame, target_weeks: float):
+            """
+            Takes the current filtered dataframe (show_df) from the forecaster and builds:
+            - detailed_df: all rows, with order qty to reach target_weeks
+            - pivot_df: Base Product vs Strength, values = Order Qty (Rounded)
+            """
+            df = df.copy()
+    
+            # Ensure required columns are there
+            for col in ["Product Name", "Product Code", "Brand", "Warehouse Qnty", "Adj Avg Weekly Sold"]:
+                if col not in df.columns:
+                    raise ValueError(f"Missing column in data for ordering: {col}")
+    
+            # Clean numerics
+            df["Warehouse Qnty"] = pd.to_numeric(df["Warehouse Qnty"], errors="coerce").fillna(0)
+            df["Adj Avg Weekly Sold"] = pd.to_numeric(df["Adj Avg Weekly Sold"], errors="coerce").fillna(0)
+    
+            # Required units for target weeks
+            df["Required Units for Target"] = df["Adj Avg Weekly Sold"] * float(target_weeks)
+    
+            # Shortage = required - current
+            df["Raw Shortage Units"] = df["Required Units for Target"] - df["Warehouse Qnty"]
+            df["Raw Shortage Units"] = df["Raw Shortage Units"].clip(lower=0)
+    
+            # Apply 300-box rounding
+            df["Order Qty (Rounded)"] = df["Raw Shortage Units"].apply(round_to_300)
+    
+            # Future stock and cover
+            df["New Warehouse Qty"] = df["Warehouse Qnty"] + df["Order Qty (Rounded)"]
+            df["New Weeks Cover"] = df.apply(
+                lambda r: (r["New Warehouse Qty"] / r["Adj Avg Weekly Sold"])
+                if r["Adj Avg Weekly Sold"] > 0 else 0,
+                axis=1,
+            )
+    
+            # Extract base product & strength from Product Name
+            base_names = []
+            strengths = []
+            for name in df["Product Name"]:
+                base, strength = extract_base_and_strength(name)
+                base_names.append(base)
+                strengths.append(strength)
+    
+            df["Base Product Name"] = base_names
+            df["Strength"] = strengths
+    
+            # Detailed table (keep ALL rows – even if order = 0)
+            detailed_df = df[
+                [
+                    "Product Name",
+                    "Base Product Name",
+                    "Strength",
+                    "Product Code",
+                    "Brand",
+                    "Warehouse Qnty",
+                    "Adj Avg Weekly Sold",
+                    "Required Units for Target",
+                    "Raw Shortage Units",
+                    "Order Qty (Rounded)",
+                    "New Warehouse Qty",
+                    "New Weeks Cover",
+                    "Weeks Remaining",
+                    "Estimated Run-Out Date",
+                    "Status",
+                ]
+            ].sort_values(["Base Product Name", "Strength"])
+    
+            # Pivot: Base Product vs Strength (Order Qty)
+            pivot_df = (
+                detailed_df.pivot_table(
+                    index="Base Product Name",
+                    columns="Strength",
+                    values="Order Qty (Rounded)",
+                    aggfunc="sum",
+                    fill_value=0,
+                )
+                .reset_index()
+            )
+    
+            # Sort strength columns numerically by mg if possible
+            strength_cols = [c for c in pivot_df.columns if c not in ["Base Product Name"]]
+    
+            def strength_key(s):
+                m = re.match(r"(\d+)", str(s))
+                return int(m.group(1)) if m else 9999
+    
+            strength_cols_sorted = sorted(strength_cols, key=strength_key)
+    
+            pivot_df = pivot_df[["Base Product Name"] + strength_cols_sorted]
+    
+            return detailed_df, pivot_df
+    
         def download_csv(url):
             r = requests.get(url)
             if r.status_code == 200:
@@ -636,8 +776,10 @@ else:
             df_store.columns = df_store.columns.astype(str)
     
             # ======== Detect weekly date columns in SALES ========
-            date_cols = [c for c in df_sales.columns
-                         if re.match(r"\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}", str(c))]
+            date_cols = [
+                c for c in df_sales.columns
+                if re.match(r"\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}", str(c))
+            ]
             if not date_cols:
                 st.error("❌ No valid weekly date columns found in the sales file.")
                 st.stop()
@@ -712,8 +854,10 @@ else:
             df_store = df_store.rename(columns={df_store.columns[0]: "Product Name"}).copy()
             df_store["Product Name"] = df_store["Product Name"].astype(str).str.strip().apply(normalize_to_1x)
     
-            store_qty_col = next((c for c in df_store.columns
-                                  if any(k in c.lower() for k in ["closing", "stock", "quantity"])), None)
+            store_qty_col = next(
+                (c for c in df_store.columns if any(k in c.lower() for k in ["closing", "stock", "quantity"])),
+                None
+            )
             if not store_qty_col:
                 st.error("❌ Store inventory file does not have a quantity/stock/closing column.")
                 st.stop()
@@ -729,8 +873,11 @@ else:
                 merged[c] = pd.to_numeric(merged[c], errors="coerce").fillna(0)
     
             # Ensure Brand/Supplier exist (from inventory); then fallback to sales *_sales if inventory blank
-            if "Brand" not in merged.columns:    merged["Brand"] = ""
-            if "Supplier" not in merged.columns: merged["Supplier"] = ""
+            if "Brand" not in merged.columns:
+                merged["Brand"] = ""
+            if "Supplier" not in merged.columns:
+                merged["Supplier"] = ""
+    
             brand_sales_merged    = f"{brand_sales_col}_sales"    if brand_sales_col else None
             supplier_sales_merged = f"{supplier_sales_col}_sales" if supplier_sales_col else None
     
@@ -749,7 +896,10 @@ else:
                 if cand in merged.columns:
                     merged["Tags Raw"] = merged["Tags Raw"].fillna("").astype(str)
                     merged[cand] = merged[cand].fillna("").astype(str)
-                    merged["Tags Raw"] = merged["Tags Raw"].where(merged["Tags Raw"].str.strip() != "", merged[cand])
+                    merged["Tags Raw"] = merged["Tags Raw"].where(
+                        merged["Tags Raw"].str.strip() != "",
+                        merged[cand]
+                    )
     
             # Cleanup helper/suffix columns
             drop_cols = [c for c in ["Product Code_sales", brand_sales_merged, supplier_sales_merged, "__mult"]
@@ -800,30 +950,33 @@ else:
             metrics = merged.apply(launch_aware_metrics, axis=1)
             merged[["Weeks on Sale", "Total Sold (period)", "Total Since Launch"]] = metrics
     
-           # --- 1) Plain period average (safe if only 1 week of data) ---
+            # --- 1) Plain period average (safe if only 1 week of data) ---
             if weeks_total > 1:
                 merged["Avg Weekly Sold"] = (merged["Total Sold (period)"] / (weeks_total - 1)).round(2)
             else:
                 merged["Avg Weekly Sold"] = 0.0
-            
+    
             # --- 2) Launch-aware average (safe & vectorized) ---
             wk  = pd.to_numeric(merged["Weeks on Sale"], errors="coerce").fillna(0)
             tsl = pd.to_numeric(merged["Total Since Launch"], errors="coerce").fillna(0)
-            
+    
             merged["Adj Avg Weekly Sold"] = 0.0
             mask = wk > 1                      # only compute when weeks >= 2
             merged.loc[mask, "Adj Avg Weekly Sold"] = (tsl[mask] / (wk[mask] - 1)).round(2)
-            
+    
             avg_col = "Adj Avg Weekly Sold"    # or "Avg Weekly Sold"
     
             # ======== Forecast calculations (warehouse stock) ========
             merged["Weeks Remaining"] = merged.apply(
-                lambda r: round(r["Warehouse Qnty"] / r[avg_col], 1) if r[avg_col] > 0 else np.nan, axis=1
+                lambda r: round(r["Warehouse Qnty"] / r[avg_col], 1) if r[avg_col] > 0 else np.nan,
+                axis=1
             )
             merged["Estimated Run-Out Date"] = merged["Weeks Remaining"].apply(
                 lambda w: (last_date + dt.timedelta(weeks=w)).strftime("%Y-%m-%d") if pd.notna(w) else ""
             )
-            merged["Status"] = merged["Warehouse Qnty"].apply(lambda x: "❌ Out of Stock" if x <= 0 else "✅ In Stock")
+            merged["Status"] = merged["Warehouse Qnty"].apply(
+                lambda x: "❌ Out of Stock" if x <= 0 else "✅ In Stock"
+            )
     
             st.success("✅ Forecast Completed Successfully (sales normalized to units; launch-aware averages with tag search).")
     
@@ -835,47 +988,109 @@ else:
             suggestions += [f"{x} [SUPPLIER]"     for x in merged["Supplier"].dropna().unique()]
             unique_tags = sorted({t for lst in merged["Tags List"] for t in lst})
             suggestions += [f"{t} [TAG]" for t in unique_tags]
-            
+    
             PAGE_KEY = "runout"  # different from the restock page
+    
             def k(name): return f"{PAGE_KEY}:{name}"
-            selected = st.multiselect("🔎 Search by Name, Code, Brand, Supplier, Tag:", sorted(list(set(suggestions))),key=k("search"))
+    
+            selected = st.multiselect(
+                "🔎 Search by Name, Code, Brand, Supplier, Tag:",
+                sorted(list(set(suggestions))),
+                key=k("search")
+            )
     
             if selected:
-                mask = pd.Series(False, index=merged.index)
+                mask_sel = pd.Series(False, index=merged.index)
                 for item in selected:
                     if item.endswith("[PRODUCT NAME]"):
                         v = item.replace("[PRODUCT NAME]", "").strip()
-                        mask |= merged["Product Name"] == v
+                        mask_sel |= merged["Product Name"] == v
                     elif item.endswith("[PRODUCT CODE]"):
                         v = item.replace("[PRODUCT CODE]", "").strip()
-                        mask |= merged["Product Code"] == v
+                        mask_sel |= merged["Product Code"] == v
                     elif item.endswith("[BRAND]"):
                         v = item.replace("[BRAND]", "").strip()
-                        mask |= merged["Brand"] == v
+                        mask_sel |= merged["Brand"] == v
                     elif item.endswith("[SUPPLIER]"):
                         v = item.replace("[SUPPLIER]", "").strip()
-                        mask |= merged["Supplier"] == v
+                        mask_sel |= merged["Supplier"] == v
                     elif item.endswith("[TAG]"):
                         v = item.replace("[TAG]", "").strip().lower()
-                        mask |= merged["Tags Search Set"].apply(lambda s: v in s)
-                show_df = merged[mask]
+                        mask_sel |= merged["Tags Search Set"].apply(lambda s: v in s)
+                show_df = merged[mask_sel]
             else:
                 show_df = merged
     
-            # ======== Display ========
+            # ======== Display main forecast table ========
             st.dataframe(
                 show_df[[
                     "Product Name", "Product Code", "Brand",
                     "Warehouse Qnty", "Store Qnty",
                     "Weeks on Sale", "Adj Avg Weekly Sold",
                     "Weeks Remaining", "Estimated Run-Out Date", "Status"
-                    #"Tags"  # show normalized tags
+                    # "Tags"  # show normalized tags if you want
                 ]],
                 use_container_width=True, height=800
             )
     
+            # ======== ORDERING + PIVOT (based on current search results) ========
+            st.markdown("---")
+            st.subheader("📦 Warehouse Ordering & Pivot (Based on Above Products)")
+    
+            if selected:
+                st.write(
+                    "Using the products returned by your search above, "
+                    "we'll calculate how much to order for the warehouse and "
+                    "build a pivot by nicotine strength."
+                )
+    
+                target_weeks = st.number_input(
+                    "🕒 Target weeks of warehouse stock for these products",
+                    min_value=1.0,
+                    max_value=52.0,
+                    value=16.0,
+                    step=1.0,
+                    key=k("order_weeks"),
+                )
+    
+                if st.button("🚀 Generate Order & Pivot for Selected Products", key=k("order_btn")):
+                    if show_df.empty:
+                        st.warning("No rows in the current search to generate an order from.")
+                    else:
+                        try:
+                            detailed_df, pivot_df = build_order_and_pivot(show_df, target_weeks)
+    
+                            st.markdown("#### 📋 Detailed Order Calculation (All Rows, 0 Included)")
+                            st.dataframe(detailed_df, use_container_width=True, height=500)
+    
+                            csv_detailed = detailed_df.to_csv(index=False).encode("utf-8")
+                            st.download_button(
+                                label="⬇️ Download Detailed Order CSV",
+                                data=csv_detailed,
+                                file_name=f"detailed_order_from_forecaster_{int(target_weeks)}w.csv",
+                                mime="text/csv",
+                                key=k("dl_detailed"),
+                            )
+    
+                            st.markdown("#### 📊 Pivot: Base Product vs Strength (Order Qty Rounded)")
+                            st.dataframe(pivot_df, use_container_width=True)
+    
+                            csv_pivot = pivot_df.to_csv(index=False).encode("utf-8")
+                            st.download_button(
+                                label="⬇️ Download Pivot Order CSV",
+                                data=csv_pivot,
+                                file_name=f"pivot_order_from_forecaster_{int(target_weeks)}w.csv",
+                                mime="text/csv",
+                                key=k("dl_pivot"),
+                            )
+                        except Exception as e_order:
+                            st.error(f"Error while building order & pivot: {e_order}")
+            else:
+                st.info("💡 Use the search above to select products first, then the ordering button will run on those results.")
+    
         except Exception as e:
             st.error(f"❌ Error: {e}")
+
     # --- App 4 ---
     def Product_Merge_Tool():
         st.set_page_config(page_title="Product Merge Tool", page_icon="📦", layout="centered")
@@ -1209,6 +1424,7 @@ else:
         Product_Merge_Tool()
     elif app_choice == "Stock Rotation Advisor":
         Stock_Rotation_Advisor()
+
 
 
 
